@@ -1,87 +1,199 @@
-    <script type="text/javascript">
-      function previewImage(event) {
-         var input = event.target;
-         var image = document.getElementById('preview');
-         if (input.files && input.files[0]) {
-            var reader = new FileReader();
-            reader.onload = function(e) {
-               image.src = e.target.result;
-            }
-            reader.readAsDataURL(input.files[0]);
-         }
-      }
-   </script>
-   <style>
-      #preview {
-         width: 300px;
-         height: 300px;
-      }
-   </style>
-    <form action="admin_add_db.php" method="post" enctype="multipart/form-data">
-        <div class="card-body">
-            <!-- First row: Username and Password -->
-            <div class="row">
-                <div class="form-group col-4">
-                    <label for="exampleInputEmail1">Username</label>
-                    <input type="text" name="m_username" class="form-control" id="exampleInputEmail1" placeholder="Enter Username" required>
-                </div>
-                <div class="form-group col-4">
-                    <label for="exampleInputPassword1">Password</label>
-                    <input type="password" name="m_password" class="form-control" id="exampleInputPassword1" placeholder="Enter Password" required>
-                </div>
-            </div>
+<!DOCTYPE html>
+<html lang="th">
 
-            <!-- Second row: Name, Email -->
-            <div class="row">
-                <div class="form-group col-8">
-                    <label for="exampleInputEmail1">ชื่อ-นามสกุล</label>
-                    <input type="text" name="m_name" class="form-control" id="exampleInputEmail1" placeholder="ชื่อ-นามสกุล" required>
-                </div>
-            </div>
+<head>
+    <meta charset="UTF-8">
+    <title>เพิ่ม Admin</title>
 
-            <!-- Third row: Phone number -->
-            <div class="row">
-               <div class="form-group col-4">
-                    <label for="exampleInputPassword1">อีเมล์</label>
-                    <input type="email" name="m_email" class="form-control" id="exampleInputPassword1" placeholder="Email" required>
-                </div>
-                <div class="form-group col-4">
-                    <label for="exampleInputEmail1">เบอร์โทร</label>
-                    <input type="text" name="m_tel" class="form-control" id="exampleInputEmail1" placeholder="เบอร์โทร" required>
-                </div>
-                
-            </div>
-            <div class="row">
-             <div class="form-group col-4">
-                    <label for="address">ที่อยู่</label>
-                    <textarea class="form-control" name="m_address" id="address" placeholder="Address"></textarea>
-                </div> 
-            </div>  
-            <!-- File input -->
-            <div class="row">
-            <div class="form-group col-4">
-                 <img id="preview" alt="Preview Image">
-               </div>
-             </div>
-             <div class="row">
-            <div class="form-group col-4">
-                <label for="exampleInputFile">File รูปภาพ *jpg, png</label>
-                <div class="input-group">
-                    <div class="custom-file">
-                        <input type="file" name="m_img" class="custom-file-input" id="exampleInputFile" onchange="previewImage(event)" required>
-                        <label class="custom-file-label" for="exampleInputFile">Choose file</label>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/css/bootstrap.min.css">
+
+    <style>
+        body {
+            background: #fdf6ee;
+            font-family: 'Segoe UI', sans-serif;
+        }
+
+        .card-custom {
+            background: #fffaf3;
+            border: none;
+            border-radius: 15px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+        }
+
+        .title {
+            color: #6b4f3b;
+            font-weight: 600;
+        }
+
+        label {
+            color: #5a4634;
+            font-weight: 500;
+        }
+
+        .form-control {
+            border-radius: 10px;
+            border: 1px solid #e8dcd1;
+        }
+
+        .form-control:focus {
+            border-color: #c8a27c;
+            box-shadow: none;
+        }
+
+        .btn-primary {
+            background: #c8a27c;
+            border: none;
+            border-radius: 10px;
+        }
+
+        .btn-primary:hover {
+            background: #b68f6a;
+        }
+
+        .btn-secondary {
+            border-radius: 10px;
+        }
+
+        /* upload */
+        .upload-box {
+            border: 2px dashed #e0cbb5;
+            border-radius: 15px;
+            background: #fffaf3;
+            cursor: pointer;
+            transition: .3s;
+        }
+
+        .upload-box:hover {
+            background: #fdf1e6;
+        }
+
+        .upload-icon {
+            font-size: 30px;
+        }
+
+        /* preview */
+        #preview {
+            width: 200px;
+            height: 200px;
+            object-fit: cover;
+            border-radius: 12px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            display: none;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="container mt-5">
+        <div class="card card-custom p-4">
+
+            <h4 class="title mb-4">👤 เพิ่มผู้ดูแลระบบ</h4>
+
+            <form action="admin_add_db.php" method="post" enctype="multipart/form-data">
+
+                <div class="form-row">
+                    <div class="form-group col-md-6">
+                        <label>Username</label>
+                        <input type="text" name="m_username" class="form-control" required>
                     </div>
-                    <div class="input-group-append">
-                        <span class="input-group-text">Upload</span>
+
+                    <div class="form-group col-md-6">
+                        <label>Password</label>
+                        <input type="password" name="m_password" class="form-control" required>
                     </div>
                 </div>
-            </div>
-          </div>
-        <!-- Submit button -->
-              <div class="form-group col-4">
-            <input type="hidden" name="m_level" value="admin">
-            <button type="submit" class="btn btn-success">บันทึกข้อมูล</button>
-            <a href="admin.php" type="button" class="btn btn-dark">กลับ</a>
+
+                <div class="form-group">
+                    <label>ชื่อ-นามสกุล</label>
+                    <input type="text" name="m_name" class="form-control" required>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group col-md-6">
+                        <label>อีเมล</label>
+                        <input type="email" name="m_email" class="form-control" required>
+                    </div>
+
+                    <div class="form-group col-md-6">
+                        <label>เบอร์โทร</label>
+                        <input type="text" name="m_tel" class="form-control" required>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>ที่อยู่</label>
+                    <textarea name="m_address" class="form-control" rows="3"></textarea>
+                </div>
+
+                <!-- upload -->
+                <div class="form-group">
+                    <label>รูปโปรไฟล์</label>
+
+                    <div id="uploadBox" class="upload-box text-center p-4">
+                        <div class="upload-icon">📷</div>
+                        <p>คลิกหรือวางรูป</p>
+                        <small>รองรับ JPG / PNG</small>
+                        <input type="file" name="m_img" id="fileInput" accept="image/*" hidden required>
+                    </div>
+
+                    <div class="mt-3">
+                        <img id="preview">
+                    </div>
+                </div>
+
+                <input type="hidden" name="m_level" value="admin">
+
+                <div class="mt-4">
+                    <button type="submit" class="btn btn-primary">💾 บันทึก</button>
+                    <a href="admin.php" class="btn btn-secondary">ย้อนกลับ</a>
+                </div>
+
+            </form>
         </div>
-    </form>
-</div>
+    </div>
+
+    <script>
+        // upload click
+        const uploadBox = document.getElementById("uploadBox");
+        const fileInput = document.getElementById("fileInput");
+        const preview = document.getElementById("preview");
+
+        uploadBox.addEventListener("click", () => fileInput.click());
+
+        // drag & drop
+        uploadBox.addEventListener("dragover", (e) => {
+            e.preventDefault();
+            uploadBox.style.background = "#f3e5d7";
+        });
+
+        uploadBox.addEventListener("dragleave", () => {
+            uploadBox.style.background = "#fffaf3";
+        });
+
+        uploadBox.addEventListener("drop", (e) => {
+            e.preventDefault();
+            fileInput.files = e.dataTransfer.files;
+            showPreview(fileInput.files[0]);
+        });
+
+        // preview
+        fileInput.addEventListener("change", function() {
+            showPreview(this.files[0]);
+        });
+
+        function showPreview(file) {
+            if (!file || !file.type.startsWith("image/")) return;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                preview.src = e.target.result;
+                preview.style.display = "block";
+            }
+            reader.readAsDataURL(file);
+        }
+    </script>
+
+</body>
+
+</html>

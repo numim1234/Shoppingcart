@@ -1,12 +1,13 @@
-<?php 
+<?php
 if (isset($_POST['m_name'])) {
+    session_start();
     include 'condb.php';
     // Include SweetAlert and jQuery
     echo '
     <script src="https://code.jquery.com/jquery-2.1.3.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/sweetalert/1.1.3/sweetalert-dev.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/sweetalert/1.1.3/sweetalert.css">';
-    
+
     // Retrieve form data
     $m_username = $_POST['m_username'];
     $m_password = $_POST['m_password'];
@@ -40,15 +41,15 @@ if (isset($_POST['m_name'])) {
         // Upload file handling...
         $date1 = date("Ymd_His");
         $numrand = (mt_rand());
-        $upload=$_FILES['m_img']['name'];
+        $upload = $_FILES['m_img']['name'];
 
-        if($upload !='') {
-            $typefile = strrchr($_FILES['m_img']['name'],".");
-            if($typefile =='.jpg' || $typefile  =='.jpg' || $typefile  =='.png'){
-                $path="admin/m_img/";
-                $newname = $numrand.$date1.$typefile;
-                $path_copy=$path.$newname;
-                move_uploaded_file($_FILES['m_img']['tmp_name'],$path_copy);
+        if ($upload != '') {
+            $typefile = strrchr($_FILES['m_img']['name'], ".");
+            if ($typefile == '.jpg' || $typefile  == '.jpg' || $typefile  == '.png') {
+                $path = "admin/m_img/";
+                $newname = $numrand . $date1 . $typefile;
+                $path_copy = $path . $newname;
+                move_uploaded_file($_FILES['m_img']['tmp_name'], $path_copy);
 
                 // SQL insertion...
                 $stmt_insert = $conn->prepare("INSERT INTO tbl_member (m_username, m_password, m_level, m_name, m_email, m_tel, m_address, m_status, m_img)
@@ -64,7 +65,13 @@ if (isset($_POST['m_name'])) {
                 $result = $stmt_insert->execute();
 
                 // Response handling...
-                if($result){
+                if ($result) {
+                    // Login user automatically by setting session vars
+                    $_SESSION['m_username'] = $m_username;
+                    $_SESSION['m_name'] = $m_name;
+                    $_SESSION['m_level'] = $m_level;
+                    $_SESSION['m_img'] = isset($newname) ? $newname : '';
+
                     echo '<script>
                          setTimeout(function() {
                           swal({
@@ -74,11 +81,11 @@ if (isset($_POST['m_name'])) {
                               timer: 1000,
                               showConfirmButton: false
                           }, function() {
-                              window.location = "login.php"; // Redirect to admin.php
+                              window.location = "products.php"; // Redirect to products listing
                           });
                         }, 1000);
                     </script>';
-                }else{
+                } else {
                     echo '<script>
                          setTimeout(function() {
                           swal({
@@ -90,7 +97,7 @@ if (isset($_POST['m_name'])) {
                         }, 1000);
                     </script>';
                 }
-            }else{ // Invalid file type
+            } else { // Invalid file type
                 echo '<script>
                          setTimeout(function() {
                           swal({
@@ -118,4 +125,3 @@ if (isset($_POST['m_name'])) {
 
     $conn = null; // Close database connection
 }
-?>

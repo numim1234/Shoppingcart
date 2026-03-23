@@ -1,7 +1,11 @@
 <?php include 'condb.php';
 
-$sql = "SELECT * FROM tbl_type";
-// ประมวลผลคำสั่ง SQL
+$sql = "SELECT t.type_id, t.type_name, COUNT(p.type_id) AS cnt
+    FROM tbl_type t
+    LEFT JOIN tbl_product p ON p.type_id = t.type_id
+    GROUP BY t.type_id
+    ORDER BY t.type_name ASC";
+// ประมวลผลคำสั่ง SQL (รวมจำนวนสินค้าต่อประเภท)
 $stmt = $conn->query($sql);
 ?>
 <!-- Header -->
@@ -31,12 +35,21 @@ $stmt = $conn->query($sql);
                 <ul class="main-nav">
                     <li class="has-submenu megamenu active"><a href="index.php">หน้าหลัก</a></li>
                     <li class="has-submenu">
-                        <a href="index.php">ประเภทสินค้า <i class="fas fa-chevron-down"></i></a>
+                        <a href="products.php">ประเภทสินค้า <i class="fas fa-chevron-down"></i></a>
                         <ul class="submenu">
+                            <?php
+                            // แสดงเมนูประเภทสินค้า พร้อมตัวนับจำนวนสินค้า
+                            foreach ($stmt as $type) {
+                                $tid = htmlspecialchars($type['type_id']);
+                                $tname = htmlspecialchars($type['type_name']);
+                                $cnt = (int)$type['cnt'];
+                                echo "<li><a href=\"products.php?type_id={$tid}\">{$tname} <span class=\"badge badge-secondary\">{$cnt}</span></a></li>";
+                            }
+                            ?>
 
                         </ul>
                     </li>
-                    <li><a href="index.php">โปรโมชั่น</a></li>
+                    <!-- <li><a href="index.php">โปรโมชั่น</a></li> -->
                     <li><a href="https://www.facebook.com/devtai.com2019" target="_blank">ติดต่อเรา</a></li>
                 </ul>
             </div>

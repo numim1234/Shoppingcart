@@ -16,7 +16,6 @@ if (isset($_GET['p_id'])) {
     $stmt_pro->execute([$_GET['p_id']]);
     $row_prod = $stmt_pro->fetch(PDO::FETCH_ASSOC);
 
-    // รูปสินค้า
     $stmt_img = $conn->prepare("SELECT * FROM tbl_img_detail WHERE p_id=?");
     $stmt_img->execute([$_GET['p_id']]);
     $result_img = $stmt_img->fetchAll();
@@ -28,88 +27,255 @@ if (isset($_GET['p_id'])) {
 }
 ?>
 
-<form id="filepond-form" action="product_edit_db.php" method="post" enctype="multipart/form-data">
-    <div class="card-body">
-        <div class="row">
-            <div class="form-group col-4">
-                <label>สินค้า</label>
-                <input type="text" name="p_name" value="<?= $row_prod['p_name']; ?>" class="form-control" required>
-            </div>
+<!DOCTYPE html>
+<html lang="th">
 
-            <div class="form-group col-4">
-                <label>ประเภทสินค้า</label>
-                <select name="type_id" class="form-control" required>
-                    <option value="<?= $row_prod['type_id']; ?>"><?= $row_prod['type_name']; ?></option>
-                    <option disabled>เลือกประเภทสินค้า</option>
-                    <?php foreach ($resultType as $t) { ?>
-                    <option value="<?= $t['type_id']; ?>"><?= $t['type_name']; ?></option>
-                    <?php } ?>
-                </select>
-            </div>
-        </div>
+<head>
+    <meta charset="UTF-8">
+    <title>แก้ไขสินค้า</title>
 
-        <div class="row">
-            <div class="form-group col-8">
-                <label>รายละเอียดสินค้า</label>
-                <textarea name="p_detail" class="form-control"><?= $row_prod['p_detail']; ?></textarea>
-            </div>
-        </div>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/css/bootstrap.min.css">
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 
-        <div class="row">
-            <div class="form-group col-3">
-                <label>ราคา</label>
-                <input type="number" name="p_price" value="<?= $row_prod['p_price']; ?>" class="form-control">
-            </div>
+    <style>
+        body {
+            background: #fdf6ee;
+            font-family: 'Segoe UI', sans-serif;
+        }
 
-            <div class="form-group col-2">
-                <label>จำนวน</label>
-                <input type="text" name="p_qty" value="<?= $row_prod['p_qty']; ?>" class="form-control">
-            </div>
+        .card-custom {
+            background: #fffaf3;
+            border: none;
+            border-radius: 15px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+        }
 
-            <div class="form-group col-3">
-                <label>หน่วย</label>
-                <select name="p_unit" class="form-control" required>
-                    <option value="<?= $row_prod['p_unit']; ?>"><?= $row_prod['p_unit']; ?></option>
-                    <option disabled>เลือกหน่วยสินค้า</option>
-                    <option value="กล่อง">กล่อง</option>
-                    <option value="ชิ้น">ชิ้น</option>
-                    <option value="อัน">อัน</option>
-                    <option value="ชุด">ชุด</option>
-                    <option value="เล่ม">เล่ม</option>
-                </select>
-            </div>
-        </div>
+        .title {
+            color: #6b4f3b;
+            font-weight: 600;
+        }
 
-        <div class="row">
-            <div class="form-group col-8">
-                <label>File รูปภาพ สินค้า *jpg, png (เลือกเมื่อต้องการเพิ่มรูปใหม่)</label>
-                <input type="file" id="fileInputEdit" name="filepond[]" multiple accept="image/jpeg,image/png"
-                    class="form-control-file">
-                <div id="previewContainerEdit" class="d-flex flex-wrap mt-2"></div>
-            </div>
-        </div>
+        label {
+            color: #5a4634;
+            font-weight: 500;
+        }
 
-        <?php if (!empty($result_img)) { ?>
-        <div class="row">
-            <div class="col-md-12">
-                <h4>รูปภาพปัจจุบัน</h4>
-                <div class="d-flex flex-wrap">
-                    <?php foreach ($result_img as $img) { ?>
-                    <div class="p-2">
-                        <img src="p_gallery/<?= $img['img']; ?>" width="120" style="object-fit:cover;">
+        .form-control {
+            border-radius: 10px;
+            border: 1px solid #e8dcd1;
+        }
+
+        .btn-primary {
+            background: #c8a27c;
+            border: none;
+            border-radius: 10px;
+        }
+
+        .btn-primary:hover {
+            background: #b68f6a;
+        }
+
+        /* upload */
+        .upload-box {
+            border: 2px dashed #e0cbb5;
+            border-radius: 15px;
+            background: #fffaf3;
+            cursor: pointer;
+            transition: .3s;
+        }
+
+        .upload-box:hover {
+            background: #fdf1e6;
+        }
+
+        .upload-icon {
+            font-size: 30px;
+        }
+
+        /* preview */
+        .preview-item {
+            width: 120px;
+            height: 100px;
+            margin: 5px;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        .preview-item img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="container mt-5">
+        <div class="card card-custom p-4">
+
+            <h4 class="title mb-4">🧁 แก้ไขสินค้า</h4>
+
+            <form id="filepond-form" enctype="multipart/form-data">
+
+                <div class="form-row">
+                    <div class="form-group col-md-6">
+                        <label>สินค้า</label>
+                        <input type="text" name="p_name" value="<?= $row_prod['p_name']; ?>" class="form-control"
+                            required>
                     </div>
-                    <?php } ?>
-                </div>
-            </div>
-        </div>
-        <?php } ?>
 
-        <div class="row">
-            <div class="form-group col-4">
+                    <div class="form-group col-md-6">
+                        <label>ประเภทสินค้า</label>
+                        <select name="type_id" class="form-control" required>
+                            <?php foreach ($resultType as $t) { ?>
+                                <option value="<?= $t['type_id']; ?>"
+                                    <?= $t['type_id'] == $row_prod['type_id'] ? 'selected' : '' ?>>
+                                    <?= $t['type_name']; ?>
+                                </option>
+                            <?php } ?>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>รายละเอียดสินค้า</label>
+                    <textarea name="p_detail" class="form-control"><?= $row_prod['p_detail']; ?></textarea>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group col-md-4">
+                        <label>ราคา</label>
+                        <input type="number" name="p_price" value="<?= $row_prod['p_price']; ?>" class="form-control">
+                    </div>
+
+                    <div class="form-group col-md-4">
+                        <label>จำนวน</label>
+                        <input type="number" name="p_qty" value="<?= $row_prod['p_qty']; ?>" class="form-control">
+                    </div>
+
+                    <div class="form-group col-md-4">
+                        <label>หน่วย</label>
+                        <select name="p_unit" class="form-control">
+                            <option <?= $row_prod['p_unit'] == "ชิ้น" ? "selected" : "" ?>>ชิ้น</option>
+                            <option <?= $row_prod['p_unit'] == "กล่อง" ? "selected" : "" ?>>กล่อง</option>
+                            <option <?= $row_prod['p_unit'] == "ชุด" ? "selected" : "" ?>>ชุด</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- upload -->
+                <div class="form-group">
+                    <label>เพิ่มรูปสินค้า</label>
+
+                    <div id="uploadBox" class="upload-box text-center p-4">
+                        <div class="upload-icon">📷</div>
+                        <p>ลากรูป หรือคลิกเลือก</p>
+                        <input type="file" id="fileInput" name="filepond[]" multiple accept="image/*" hidden>
+                    </div>
+
+                    <div id="previewContainer" class="d-flex flex-wrap mt-3"></div>
+                </div>
+
+                <!-- รูปเดิม -->
+                <?php if (!empty($result_img)) { ?>
+                    <div class="form-group">
+                        <label>รูปภาพปัจจุบัน</label>
+                        <div class="d-flex flex-wrap">
+                            <?php foreach ($result_img as $img) { ?>
+                                <div class="preview-item">
+                                    <img src="p_gallery/<?= $img['img']; ?>">
+                                </div>
+                            <?php } ?>
+                        </div>
+                    </div>
+                <?php } ?>
+
                 <input type="hidden" name="p_id" value="<?= $row_prod['p_id']; ?>">
-                <button type="submit" id="btnSubmit" class="btn btn-success">บันทึกข้อมูล</button>
-                <a href="product.php" type="button" class="btn btn-dark">กลับ</a>
-            </div>
+
+                <div class="mt-4">
+                    <button type="submit" id="btnSubmit" class="btn btn-primary">💾 บันทึก</button>
+                    <a href="product.php" class="btn btn-secondary">ย้อนกลับ</a>
+                </div>
+
+            </form>
         </div>
     </div>
-</form>
+
+    <script>
+        // upload click
+        const uploadBox = document.getElementById("uploadBox");
+        const fileInput = document.getElementById("fileInput");
+
+        uploadBox.addEventListener("click", () => fileInput.click());
+
+        uploadBox.addEventListener("dragover", (e) => {
+            e.preventDefault();
+            uploadBox.style.background = "#f3e5d7";
+        });
+
+        uploadBox.addEventListener("dragleave", () => {
+            uploadBox.style.background = "#fffaf3";
+        });
+
+        uploadBox.addEventListener("drop", (e) => {
+            e.preventDefault();
+            fileInput.files = e.dataTransfer.files;
+            fileInput.dispatchEvent(new Event("change"));
+        });
+
+        // preview
+        fileInput.addEventListener("change", function() {
+            const container = document.getElementById("previewContainer");
+            container.innerHTML = "";
+
+            Array.from(this.files).forEach(file => {
+                if (!file.type.startsWith("image/")) return;
+
+                const reader = new FileReader();
+                reader.onload = e => {
+                    const div = document.createElement("div");
+                    div.className = "preview-item";
+                    div.innerHTML = `<img src="${e.target.result}">`;
+                    container.appendChild(div);
+                }
+                reader.readAsDataURL(file);
+            });
+        });
+
+        // submit ajax
+        $("#btnSubmit").click(function(e) {
+            e.preventDefault();
+
+            var formData = new FormData($("#filepond-form")[0]);
+
+            $.ajax({
+                url: 'product_edit_db.php',
+                method: 'POST',
+                data: formData,
+                processData: false,
+                contentType: false,
+                dataType: 'json',
+                success: function(res) {
+                    if (res.status) {
+                        Swal.fire({
+                            icon: 'success',
+                            title: res.message,
+                            timer: 1200,
+                            showConfirmButton: false
+                        }).then(() => {
+                            window.location = "product.php";
+                        });
+                    } else {
+                        Swal.fire('ผิดพลาด', res.message, 'error');
+                    }
+                }
+            });
+        });
+    </script>
+
+</body>
+
+</html>

@@ -1,95 +1,214 @@
 <?php
-// คิวรี่ข้อมูลมาแสดงในตาราง
 include '../condb.php';
-$stmtType = $conn->prepare("
-    SELECT * FROM tbl_type
-    ORDER BY type_id ASC #เรียงลำดับข้อมูลจากน้อยไปมาก
-");
+$stmtType = $conn->prepare("SELECT * FROM tbl_type ORDER BY type_id ASC");
 $stmtType->execute();
 $resultType = $stmtType->fetchAll();
 ?>
 
-<form id="filepond-form" action="product_add_db.php" method="post" enctype="multipart/form-data">
-    <div class="card-body">
-        <div class="row">
-            <div class="form-group col-4">
-                <label for="exampleInputEmail1">สินค้า</label>
-                <input type="text" name="p_name" class="form-control" id="exampleInputEmail1" placeholder="ชื่อสินค้า"
-                    required>
-            </div>
-            <div class="form-group col-4">
-                <label for="exampleInputPassword1">ประเภทสินค้า</label>
-                <select id="productType" name="type_id" class="form-control" required>
-                    <option disabled selected>เลือกประเภทสินค้า</option>
-                    <?php foreach ($resultType as $row_type) { ?>
-                    <option value="<?php echo $row_type['type_id']; ?>"><?php echo $row_type['type_name']; ?></option>
-                    <?php } ?>
-                </select>
-            </div>
-        </div>
+<!DOCTYPE html>
+<html lang="th">
 
-        <div class="row">
-            <div class="form-group col-8">
-                <label for="exampleInputEmail1">รายละเอียดสินค้า</label>
-                <textarea name="p_detail" id="p_detail" class="form-control" placeholder="รายละเอียดสินค้า"
-                    required></textarea>
-            </div>
-        </div>
+<head>
+    <meta charset="UTF-8">
+    <title>เพิ่มสินค้า</title>
 
-        <div class="row">
-            <div class="form-group col-3">
-                <label for="exampleInputPassword1">ราคา</label>
-                <input type="number" name="p_price" class="form-control" id="exampleInputPassword1">
-            </div>
-            <div class="form-group col-2">
-                <label for="exampleInputEmail1">จำนวน</label>
-                <input type="text" name="p_qty" class="form-control" id="exampleInputEmail1">
-            </div>
-            <div class="form-group col-3">
-                <label for="exampleInputEmail1">หน่วย</label>
-                <select name="p_unit" class="form-control" required>
-                    <option disabled selected>เลือกหน่วยสินค้า</option>
-                    <option value="กล่อง">กล่อง</option>
-                    <option value="ชิ้น">ชิ้น</option>
-                    <option value="อัน">อัน</option>
-                    <option value="ชุด">ชุด</option>
-                    <option value="เล่ม">เล่ม</option>
-                </select>
-            </div>
-        </div>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/css/bootstrap.min.css">
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 
-        <div class="row">
-            <div class="form-group col-8">
-                <label>File รูปภาพ สินค้า *jpg, png</label>
+    <style>
+    body {
+        background: #fdf6ee;
+        font-family: 'Segoe UI', sans-serif;
+    }
 
-                <div class="input-group">
-                    <div class="custom-file">
-                        <input type="file" name="filepond[]" id="fileInput" class="custom-file-input" multiple
-                            accept="image/jpeg,image/png" onchange="previewImages(event)">
-                        <label class="custom-file-label" for="fileInput">เลือกไฟล์</label>
+    .card-custom {
+        background: #fffaf3;
+        border: none;
+        border-radius: 15px;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+    }
+
+    .title {
+        font-weight: 600;
+        color: #6b4f3b;
+    }
+
+    label {
+        font-weight: 500;
+        color: #5a4634;
+    }
+
+    .form-control {
+        border-radius: 10px;
+        border: 1px solid #e8dcd1;
+        background: #fff;
+    }
+
+    .form-control:focus {
+        border-color: #c8a27c;
+        box-shadow: none;
+    }
+
+    .btn-primary {
+        background: #c8a27c;
+        border: none;
+        border-radius: 10px;
+    }
+
+    .btn-primary:hover {
+        background: #b68f6a;
+    }
+
+    .btn-secondary {
+        border-radius: 10px;
+    }
+
+    /* preview */
+    .preview-item {
+        width: 150px;
+        height: 100px;
+        border-radius: 10px;
+        overflow: hidden;
+        position: relative;
+        margin: 5px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    }
+
+    .preview-item img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+    }
+
+    .remove-btn {
+        position: absolute;
+        top: 5px;
+        right: 5px;
+        background: #fff;
+        border: none;
+        border-radius: 50%;
+        padding: 3px 7px;
+        font-size: 12px;
+        cursor: pointer;
+    }
+
+    .upload-box {
+        border: 2px dashed #e0cbb5;
+        border-radius: 15px;
+        background: #fffaf3;
+        cursor: pointer;
+        transition: 0.3s;
+    }
+
+    .upload-box:hover {
+        background: #fdf1e6;
+        border-color: #c8a27c;
+    }
+
+    .upload-icon {
+        font-size: 32px;
+        margin-bottom: 5px;
+    }
+
+    .upload-box p {
+        color: #6b4f3b;
+        font-weight: 500;
+        margin: 0;
+    }
+
+    .upload-box small {
+        color: #a1887f;
+    }
+
+    /* preview animation */
+    .preview-item {
+        transition: 0.3s;
+    }
+
+    .preview-item:hover {
+        transform: scale(1.05);
+    }
+    </style>
+</head>
+
+<body>
+
+    <div class="container mt-5">
+        <div class="card card-custom p-4">
+            <h4 class="title mb-4">🍞 เพิ่มสินค้า (Bakery)</h4>
+
+            <form id="filepond-form" enctype="multipart/form-data">
+
+                <div class="form-row">
+                    <div class="form-group col-md-6">
+                        <label>ชื่อสินค้า</label>
+                        <input type="text" name="p_name" class="form-control" required>
                     </div>
 
-                    <div class="input-group-append">
-                        <span class="input-group-text">Upload</span>
+                    <div class="form-group col-md-6">
+                        <label>ประเภทสินค้า</label>
+                        <select name="type_id" class="form-control" required>
+                            <option disabled selected>เลือกประเภท</option>
+                            <?php foreach ($resultType as $row_type) { ?>
+                            <option value="<?= $row_type['type_id']; ?>">
+                                <?= $row_type['type_name']; ?>
+                            </option>
+                            <?php } ?>
+                        </select>
                     </div>
                 </div>
 
-                <!-- preview -->
-                <div id="previewContainer" class="d-flex flex-wrap mt-3"></div>
-            </div>
-        </div>
-        <div class="row">
-            <div class="form-group col-4">
-                <button type="submit" id="btnSubmit" class="btn btn-success">บันทึกข้อมูล</button>
-                <a href="product.php" type="button" class="btn btn-dark">กลับ</a>
-            </div>
+                <div class="form-group">
+                    <label>รายละเอียดสินค้า</label>
+                    <textarea name="p_detail" class="form-control" rows="3" required></textarea>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group col-md-4">
+                        <label>ราคา</label>
+                        <input type="number" name="p_price" class="form-control">
+                    </div>
+
+                    <div class="form-group col-md-4">
+                        <label>จำนวน</label>
+                        <input type="number" name="p_qty" class="form-control">
+                    </div>
+
+                    <div class="form-group col-md-4">
+                        <label>หน่วย</label>
+                        <select name="p_unit" class="form-control" required>
+                            <option disabled selected>เลือกหน่วย</option>
+                            <option>ชิ้น</option>
+                            <option>กล่อง</option>
+                            <option>ชุด</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>รูปสินค้า</label>
+
+                    <div id="uploadBox" class="upload-box text-center p-4">
+                        <div class="upload-icon">📷</div>
+                        <p class="mb-1">ลากรูปมาวาง หรือคลิกเพื่อเลือก</p>
+                        <small>รองรับ JPG / PNG</small>
+                        <input type="file" name="filepond[]" id="fileInput" multiple accept="image/*" hidden>
+                    </div>
+
+                    <div id="previewContainer" class="d-flex flex-wrap mt-3"></div>
+                </div>
+
+                <div class="mt-4">
+                    <button type="submit" id="btnSubmit" class="btn btn-primary">💾 บันทึก</button>
+                    <a href="product.php" class="btn btn-secondary">ย้อนกลับ</a>
+                </div>
+
+            </form>
         </div>
     </div>
-</form>
 
-<script>
-$(document).ready(function() {
-    // เมื่อคลิกปุ่มบันทึก (ใช้ input file ปกติ)
+    <script>
     $("#btnSubmit").click(function(e) {
         e.preventDefault();
 
@@ -99,83 +218,84 @@ $(document).ready(function() {
             url: 'product_add_db.php',
             method: 'POST',
             data: formData,
-            dataType: 'json',
             processData: false,
             contentType: false,
-            success: function(response) {
-                if (response.status) {
+            dataType: 'json',
+            success: function(res) {
+                if (res.status) {
                     Swal.fire({
-                        title: response.message,
-                        text: 'Your action was successful!',
                         icon: 'success',
-                        timer: 1000,
+                        title: res.message,
+                        timer: 1200,
                         showConfirmButton: false
-                    }).then(function() {
+                    }).then(() => {
                         window.location = "product.php";
                     });
                 } else {
-                    Swal.fire({
-                        title: response.message,
-                        text: 'error!',
-                        icon: 'error',
-                        confirmButtonText: 'OK'
-                    });
+                    Swal.fire('ผิดพลาด', res.message, 'error');
                 }
             }
         });
     });
-});
 
-// Preview logic for native file input
-function updatePreviews(input) {
-    const container = document.getElementById('previewContainer');
-    container.innerHTML = '';
-    const files = input.files;
-    if (!files || files.length === 0) return;
+    // preview
+    document.getElementById("fileInput").addEventListener("change", function() {
+        const container = document.getElementById("previewContainer");
+        container.innerHTML = "";
 
-    Array.from(files).forEach((file, idx) => {
-        if (!file.type.startsWith('image/')) return;
+        Array.from(this.files).forEach((file, index) => {
+            if (!file.type.startsWith("image/")) return;
 
-        const url = URL.createObjectURL(file);
-        const wrap = document.createElement('div');
-        wrap.className = 'm-1 position-relative preview-item';
-        wrap.style.width = '220px';
-        wrap.style.height = '120px';
-        wrap.style.overflow = 'hidden';
-        wrap.style.borderRadius = '6px';
-        wrap.style.boxShadow = '0 1px 6px rgba(0,0,0,0.08)';
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const div = document.createElement("div");
+                div.className = "preview-item";
 
-        const img = document.createElement('img');
-        img.src = url;
-        img.style.width = '100%';
-        img.style.height = '100%';
-        img.style.objectFit = 'cover';
-        img.onload = () => URL.revokeObjectURL(url);
+                div.innerHTML = `
+                <img src="${e.target.result}">
+                <button class="remove-btn" onclick="removeImage(${index})">x</button>
+            `;
 
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.className = 'btn btn-sm btn-light';
-        btn.style.position = 'absolute';
-        btn.style.left = '6px';
-        btn.style.top = '6px';
-        btn.innerText = 'ลบ';
-        btn.onclick = function() {
-            // remove file from input using DataTransfer
-            const dt = new DataTransfer();
-            Array.from(input.files).forEach((f, i) => {
-                if (i !== idx) dt.items.add(f);
-            });
-            input.files = dt.files;
-            updatePreviews(input);
-        };
-
-        wrap.appendChild(img);
-        wrap.appendChild(btn);
-        container.appendChild(wrap);
+                container.appendChild(div);
+            }
+            reader.readAsDataURL(file);
+        });
     });
-}
 
-document.getElementById('fileInput').addEventListener('change', function() {
-    updatePreviews(this);
-});
-</script>
+    function removeImage(index) {
+        const input = document.getElementById("fileInput");
+        const dt = new DataTransfer();
+
+        Array.from(input.files).forEach((file, i) => {
+            if (i !== index) dt.items.add(file);
+        });
+
+        input.files = dt.files;
+        input.dispatchEvent(new Event("change"));
+    }
+    const uploadBox = document.getElementById("uploadBox");
+    const fileInput = document.getElementById("fileInput");
+
+    // คลิกเพื่อเลือกไฟล์
+    uploadBox.addEventListener("click", () => fileInput.click());
+
+    // Drag & Drop
+    uploadBox.addEventListener("dragover", (e) => {
+        e.preventDefault();
+        uploadBox.style.background = "#f3e5d7";
+    });
+
+    uploadBox.addEventListener("dragleave", () => {
+        uploadBox.style.background = "#fffaf3";
+    });
+
+    uploadBox.addEventListener("drop", (e) => {
+        e.preventDefault();
+        fileInput.files = e.dataTransfer.files;
+        fileInput.dispatchEvent(new Event("change"));
+    });
+    </script>
+
+</body>
+
+</html>
