@@ -153,7 +153,8 @@ if (isset($_GET['p_id'])) {
 
                     <div class="form-group col-md-4">
                         <label>จำนวน</label>
-                        <input type="number" name="p_qty" value="<?= $row_prod['p_qty']; ?>" class="form-control">
+                        <input type="number" name="p_qty" value="<?= $row_prod['p_stock']; ?>" class="form-control"
+                            min="0">
                     </div>
 
                     <div class="form-group col-md-4">
@@ -186,7 +187,7 @@ if (isset($_GET['p_id'])) {
                         <div class="d-flex flex-wrap">
                             <?php foreach ($result_img as $img) { ?>
                                 <div class="preview-item">
-                                    <img src="p_gallery/<?= $img['img']; ?>">
+                                    <img src="p_gallery/<?= htmlspecialchars($img['img']); ?>" alt="">
                                 </div>
                             <?php } ?>
                         </div>

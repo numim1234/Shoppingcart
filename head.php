@@ -1,6 +1,5 @@
 <?php
-// base path to the Shoppingcart folder (adjust if you run the project from a different subfolder)
-$base = '/Shoppingcart/';
+$base = '/';
 ?>
 <html lang="en">
 
@@ -17,3 +16,4 @@ $base = '/Shoppingcart/';
     <link rel="stylesheet" href="<?php echo $base; ?>assets/css/style.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/sweetalert2@11.1.5/dist/sweetalert2.min.css">
 </head>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>

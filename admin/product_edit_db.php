@@ -1,105 +1,122 @@
 <?php
-header('Content-Type: application/json');
-
-$response = ["status" => false, "message" => "error"];
+header('Content-Type: application/json; charset=utf-8');
+include '../condb.php';
 
 try {
-
-    if (!isset($_POST['p_id'])) {
-        throw new Exception("ไม่มี p_id");
+    if (
+        !isset($_POST['p_id']) ||
+        !isset($_POST['p_name']) ||
+        !isset($_POST['type_id'])
+    ) {
+        echo json_encode([
+            'status' => false,
+            'message' => 'ข้อมูลไม่ครบ'
+        ]);
+        exit;
     }
 
-    include '../condb.php';
+    $p_id      = (int)$_POST['p_id'];
+    $p_name    = trim($_POST['p_name']);
+    $type_id   = (int)$_POST['type_id'];
+    $p_detail  = trim($_POST['p_detail'] ?? '');
+    $p_price   = (float)($_POST['p_price'] ?? 0);
+    $p_qty     = (int)($_POST['p_qty'] ?? 0);
+    $p_stock   = $p_qty; // ให้สต็อกตรงกับจำนวนที่แก้
+    $p_unit    = trim($_POST['p_unit'] ?? '');
+    $p_status  = isset($_POST['p_status']) ? (int)$_POST['p_status'] : 1;
+    $sale_type = isset($_POST['sale_type']) ? trim($_POST['sale_type']) : 'sale';
 
-    $conn->beginTransaction(); // ⭐ สำคัญ
+    // path เก็บรูป
+    $uploadDir = __DIR__ . '/p_gallery/';
 
-    $p_id    = (int)$_POST['p_id'];
-    $p_name  = trim($_POST['p_name']);
-    $type_id = (int)$_POST['type_id'];
-    $p_detail = trim($_POST['p_detail']);
-    $p_price = (int)$_POST['p_price'];
-    $p_qty   = (int)$_POST['p_qty'];
-    $p_unit  = trim($_POST['p_unit']);
+    if (!is_dir($uploadDir)) {
+        mkdir($uploadDir, 0777, true);
+    }
 
-    // =====================
-    // UPDATE PRODUCT
-    // =====================
-    $stmt = $conn->prepare("
-        UPDATE tbl_product SET 
-            p_name = ?, 
-            type_id = ?, 
-            p_detail = ?, 
-            p_price = ?, 
-            p_qty = ?, 
-            p_unit = ?
-        WHERE p_id = ?
-    ");
+    // 1) อัปเดตข้อมูลสินค้า
+    $sql = "UPDATE tbl_product SET
+                p_name = :p_name,
+                type_id = :type_id,
+                p_detail = :p_detail,
+                p_price = :p_price,
+                p_qty = :p_qty,
+                p_stock = :p_stock,
+                p_unit = :p_unit,
+                p_status = :p_status,
+                sale_type = :sale_type
+            WHERE p_id = :p_id";
 
-    $stmt->execute([
-        $p_name,
-        $type_id,
-        $p_detail,
-        $p_price,
-        $p_qty,
-        $p_unit,
-        $p_id
-    ]);
+    $stmt = $conn->prepare($sql);
+    $stmt->bindParam(':p_name', $p_name);
+    $stmt->bindParam(':type_id', $type_id, PDO::PARAM_INT);
+    $stmt->bindParam(':p_detail', $p_detail);
+    $stmt->bindParam(':p_price', $p_price);
+    $stmt->bindParam(':p_qty', $p_qty, PDO::PARAM_INT);
+    $stmt->bindParam(':p_stock', $p_stock, PDO::PARAM_INT);
+    $stmt->bindParam(':p_unit', $p_unit);
+    $stmt->bindParam(':p_status', $p_status, PDO::PARAM_INT);
+    $stmt->bindParam(':sale_type', $sale_type);
+    $stmt->bindParam(':p_id', $p_id, PDO::PARAM_INT);
+    $stmt->execute();
 
-    // =====================
-    // UPLOAD IMAGE
-    // =====================
+    // 2) ถ้ามีการอัปโหลดรูปใหม่
     if (!empty($_FILES['filepond']['name'][0])) {
 
-        $path = __DIR__ . '/../p_gallery/';
+        // ดึงรูปเก่าจาก tbl_img_detail
+        $stmtOld = $conn->prepare("SELECT img FROM tbl_img_detail WHERE p_id = ?");
+        $stmtOld->execute([$p_id]);
+        $oldImages = $stmtOld->fetchAll(PDO::FETCH_ASSOC);
 
-        if (!is_dir($path)) {
-            mkdir($path, 0755, true);
+        // ลบไฟล์รูปเก่าในโฟลเดอร์
+        foreach ($oldImages as $old) {
+            if (!empty($old['img'])) {
+                $oldPath = $uploadDir . $old['img'];
+                if (file_exists($oldPath)) {
+                    unlink($oldPath);
+                }
+            }
         }
 
-        foreach ($_FILES['filepond']['name'] as $i => $name) {
+        // ลบข้อมูลรูปเก่าในฐานข้อมูล
+        $stmtDelete = $conn->prepare("DELETE FROM tbl_img_detail WHERE p_id = ?");
+        $stmtDelete->execute([$p_id]);
 
-            $tmp  = $_FILES['filepond']['tmp_name'][$i];
-            $size = $_FILES['filepond']['size'][$i];
-            $err  = $_FILES['filepond']['error'][$i];
+        // อัปโหลดรูปใหม่
+        $totalFiles = count($_FILES['filepond']['name']);
 
-            // ⭐ เช็ค error
-            if ($err !== UPLOAD_ERR_OK) continue;
+        for ($i = 0; $i < $totalFiles; $i++) {
+            $fileName = $_FILES['filepond']['name'][$i];
+            $tmpName  = $_FILES['filepond']['tmp_name'][$i];
+            $error    = $_FILES['filepond']['error'][$i];
 
-            if (!file_exists($tmp)) continue;
+            if ($error !== 0 || empty($fileName)) {
+                continue;
+            }
 
-            $mime = mime_content_type($tmp);
+            $ext = strtolower(pathinfo($fileName, PATHINFO_EXTENSION));
+            $allow = ['jpg', 'jpeg', 'png', 'webp'];
 
-            if (!in_array($mime, ['image/jpeg', 'image/png'])) continue;
+            if (!in_array($ext, $allow)) {
+                continue;
+            }
 
-            if ($size > 5000000) continue;
+            $newName = 'product_' . $p_id . '_' . time() . '_' . $i . '.' . $ext;
+            $targetPath = $uploadDir . $newName;
 
-            // ⭐ กันชื่อชน + ปลอดภัย
-            $ext = pathinfo($name, PATHINFO_EXTENSION);
-            $newname = uniqid() . "_" . $i . "." . $ext;
-
-            if (move_uploaded_file($tmp, $path . $newname)) {
-
-                $stmt2 = $conn->prepare("
-                    INSERT INTO tbl_img_detail (p_id, img)
-                    VALUES (?, ?)
-                ");
-                $stmt2->execute([$p_id, $newname]);
+            if (move_uploaded_file($tmpName, $targetPath)) {
+                $stmtImg = $conn->prepare("INSERT INTO tbl_img_detail (p_id, img) VALUES (?, ?)");
+                $stmtImg->execute([$p_id, $newName]);
             }
         }
     }
 
-    $conn->commit(); // ⭐
-
-    $response["status"] = true;
-    $response["message"] = "แก้ไขข้อมูลเรียบร้อย";
+    echo json_encode([
+        'status' => true,
+        'message' => 'บันทึกข้อมูลสำเร็จ'
+    ]);
 } catch (Exception $e) {
-
-    if (isset($conn)) {
-        $conn->rollBack(); // ⭐ rollback ถ้าพัง
-    }
-
-    $response["message"] = $e->getMessage();
+    echo json_encode([
+        'status' => false,
+        'message' => $e->getMessage()
+    ]);
 }
-
-echo json_encode($response);
-exit;
