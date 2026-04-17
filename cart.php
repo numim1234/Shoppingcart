@@ -1,5 +1,9 @@
 <?php
 session_start();
+
+error_reporting(E_ALL);
+ini_set('display_errors', 1);
+
 require_once("head.php");
 require_once("condb.php");
 
@@ -7,6 +11,72 @@ date_default_timezone_set('Asia/Bangkok');
 
 $cart = $_SESSION['cart'] ?? [];
 $today = date('Y-m-d');
+
+/*
+|--------------------------------------------------------------------------
+| ฟังก์ชันหาโปรโมชั่นที่ดีที่สุดสำหรับสินค้าแต่ละรายการ
+|--------------------------------------------------------------------------
+*/
+if (!function_exists('getPromotion')) {
+    function getPromotion(PDO $conn, int $p_id, float $lineTotal): array
+    {
+        $today = date('Y-m-d');
+
+        try {
+            $stmt = $conn->prepare("
+                SELECT p.*
+                FROM tbl_promotion p
+                LEFT JOIN tbl_promotion_product pp ON p.promo_id = pp.promo_id
+                WHERE p.promo_status = 1
+                  AND p.start_date <= ?
+                  AND p.end_date >= ?
+                  AND p.min_order <= ?
+                  AND (
+                        p.apply_type = 'all'
+                        OR (p.apply_type = 'product' AND pp.p_id = ?)
+                      )
+                GROUP BY p.promo_id
+                ORDER BY p.promo_id DESC
+            ");
+            $stmt->execute([$today, $today, $lineTotal, $p_id]);
+            $promotions = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+            $bestPromo = null;
+            $bestDiscount = 0;
+
+            foreach ($promotions as $promo) {
+                $discount = 0;
+
+                if ($promo['promo_type'] === 'percent') {
+                    $discount = ($lineTotal * (float)$promo['promo_value']) / 100;
+                } elseif ($promo['promo_type'] === 'amount') {
+                    $discount = (float)$promo['promo_value'];
+                }
+
+                if ($discount > $lineTotal) {
+                    $discount = $lineTotal;
+                }
+
+                if ($discount > $bestDiscount) {
+                    $bestDiscount = $discount;
+                    $bestPromo = $promo;
+                }
+            }
+
+            return [
+                'promo' => $bestPromo,
+                'discount' => $bestDiscount,
+                'final_total' => $lineTotal - $bestDiscount
+            ];
+        } catch (Exception $e) {
+            return [
+                'promo' => null,
+                'discount' => 0,
+                'final_total' => $lineTotal
+            ];
+        }
+    }
+}
 
 /*
 |--------------------------------------------------------------------------
@@ -129,7 +199,9 @@ if (!empty($cart)) {
 | คำนวณยอดรวม
 |--------------------------------------------------------------------------
 */
+$grandRawTotal = 0;
 $grandTotal = 0;
+$grandDiscount = 0;
 $grandDeposit = 0;
 $grandRemain = 0;
 $totalQty = 0;
@@ -148,29 +220,37 @@ if (!empty($cart)) {
     }
 
     foreach ($cart as $item) {
+        $p_id = (int)($item['p_id'] ?? 0);
         $p_price = (float)($item['p_price'] ?? 0);
         $qty = (int)($item['qty'] ?? 1);
         $sum = $p_price * $qty;
         $order_type = $item['order_type'] ?? 'sale';
+
+        $discount = 0;
+        $finalSum = $sum;
 
         if ($order_type === 'reserve') {
             $deposit = isset($item['deposit']) ? (float)$item['deposit'] : ($sum * 0.50);
             $remain  = isset($item['remain']) ? (float)$item['remain'] : ($sum * 0.50);
             $payNow += $deposit;
         } else {
+            $promoResult = getPromotion($conn, $p_id, $sum);
+            $discount = (float)$promoResult['discount'];
+            $finalSum = (float)$promoResult['final_total'];
+
             $deposit = 0;
             $remain  = 0;
-            $payNow += $sum;
+            $payNow += $finalSum;
 
-            $p_id = (int)($item['p_id'] ?? 0);
             $currentStock = $stockMap[$p_id]['p_stock'] ?? 0;
-
             if ($currentStock <= 0 || $qty > $currentStock) {
                 $canCheckout = false;
             }
         }
 
-        $grandTotal += $sum;
+        $grandRawTotal += $sum;
+        $grandTotal += $finalSum;
+        $grandDiscount += $discount;
         $grandDeposit += $deposit;
         $grandRemain += $remain;
         $totalQty += $qty;
@@ -196,51 +276,35 @@ if (!empty($cart)) {
                         ← เลือกสินค้าเพิ่ม
                     </a>
                     <?php if (!empty($cart)): ?>
-                        <a href="cart.php?clear=1" class="btn btn-outline-danger rounded-pill px-4 btn-soft"
-                            onclick="return confirm('ต้องการล้างตะกร้าทั้งหมดหรือไม่?')">
-                            ล้างตะกร้า
-                        </a>
+                    <a href="cart.php?clear=1" class="btn btn-outline-danger rounded-pill px-4 btn-soft"
+                        onclick="return confirm('ต้องการล้างตะกร้าทั้งหมดหรือไม่?')">
+                        ล้างตะกร้า
+                    </a>
                     <?php endif; ?>
                 </div>
             </div>
 
             <?php if (!empty($_SESSION['success'])): ?>
-                <div class="alert alert-success alert-dismissible fade show rounded-4 shadow-sm border-0" role="alert">
-                    <?= htmlspecialchars($_SESSION['success']) ?>
-                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-                </div>
-                <?php unset($_SESSION['success']); ?>
+            <div class="alert alert-success alert-dismissible fade show rounded-4 shadow-sm border-0" role="alert">
+                <?= htmlspecialchars($_SESSION['success']) ?>
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>
+            <?php unset($_SESSION['success']); ?>
             <?php endif; ?>
 
             <?php if (!empty($_SESSION['error'])): ?>
-                <div class="alert alert-danger alert-dismissible fade show rounded-4 shadow-sm border-0" role="alert">
-                    <?= htmlspecialchars($_SESSION['error']) ?>
-                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-                </div>
-                <?php unset($_SESSION['error']); ?>
+            <div class="alert alert-danger alert-dismissible fade show rounded-4 shadow-sm border-0" role="alert">
+                <?= htmlspecialchars($_SESSION['error']) ?>
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>
+            <?php unset($_SESSION['error']); ?>
             <?php endif; ?>
 
             <?php if (!empty($cart)): ?>
-
-                <div class="cart-summary-mini mb-4">
-                    <div class="mini-box">
-                        <div class="mini-label">จำนวนสินค้า</div>
-                        <div class="mini-value"><?= number_format($totalQty) ?> ชิ้น</div>
-                    </div>
-                    <div class="mini-box">
-                        <div class="mini-label">ยอดรวมทั้งหมด</div>
-                        <div class="mini-value"><?= number_format($grandTotal, 2) ?> บาท</div>
-                    </div>
-                    <div class="mini-box">
-                        <div class="mini-label"><?= $hasReserve ? 'ยอดที่ชำระตอนนี้' : 'ยอดชำระตอนนี้' ?></div>
-                        <div class="mini-value text-danger"><?= number_format($payNow, 2) ?> บาท</div>
-                    </div>
-                </div>
-
-                <div class="row g-4">
-                    <div class="col-lg-8">
-                        <?php foreach ($cart as $key => $item): ?>
-                            <?php
+            <div class="row g-4">
+                <div class="col-lg-8">
+                    <?php foreach ($cart as $key => $item): ?>
+                    <?php
                             $p_id = (int)($item['p_id'] ?? 0);
                             $p_name = $item['p_name'] ?? '-';
                             $p_price = (float)($item['p_price'] ?? 0);
@@ -249,6 +313,17 @@ if (!empty($cart)) {
                             $img = $item['img'] ?? 'admin/p_gallery/no-image.png';
                             $type_name = $item['type_name'] ?? '-';
                             $order_type = $item['order_type'] ?? 'sale';
+
+                            $discount = 0;
+                            $promo = null;
+                            $finalPrice = $sum;
+
+                            if ($order_type === 'sale') {
+                                $promoResult = getPromotion($conn, $p_id, $sum);
+                                $discount = (float)$promoResult['discount'];
+                                $promo = $promoResult['promo'];
+                                $finalPrice = (float)$promoResult['final_total'];
+                            }
 
                             $currentStock = $stockMap[$p_id]['p_stock'] ?? 0;
                             $isSaleItem = ($order_type === 'sale');
@@ -264,231 +339,276 @@ if (!empty($cart)) {
                             }
                             ?>
 
-                            <div class="card border-0 shadow-sm rounded-4 mb-4 overflow-hidden cart-card cart-card-strong">
-                                <div class="card-body p-0">
-                                    <div class="row g-0">
-                                        <div class="col-md-4 col-lg-3">
-                                            <div class="cart-image-wrap h-100">
-                                                <img src="<?= htmlspecialchars($img) ?>" alt="<?= htmlspecialchars($p_name) ?>"
-                                                    class="w-100 h-100 cart-product-image"
-                                                    onerror="this.onerror=null;this.src='admin/p_gallery/no-image.png';">
-                                            </div>
-                                        </div>
+                    <div class="card border-0 shadow-sm rounded-4 mb-4 overflow-hidden cart-card cart-card-strong">
+                        <div class="card-body p-0">
+                            <div class="row g-0">
+                                <div class="col-md-4 col-lg-3">
+                                    <div class="cart-image-wrap h-100">
+                                        <img src="<?= htmlspecialchars($img) ?>" alt="<?= htmlspecialchars($p_name) ?>"
+                                            class="w-100 h-100 cart-product-image"
+                                            onerror="this.onerror=null;this.src='admin/p_gallery/no-image.png';">
+                                    </div>
+                                </div>
 
-                                        <div class="col-md-8 col-lg-9">
-                                            <div class="p-4 h-100 d-flex flex-column justify-content-between">
+                                <div class="col-md-8 col-lg-9">
+                                    <div class="p-4 h-100 d-flex flex-column justify-content-between">
+                                        <div>
+                                            <div
+                                                class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3">
                                                 <div>
-                                                    <div
-                                                        class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3">
-                                                        <div>
-                                                            <span
-                                                                class="badge rounded-pill <?= $order_type === 'reserve' ? 'bg-warning text-dark' : 'bg-success' ?> px-3 py-2 mb-2">
-                                                                <?= $order_type === 'reserve' ? 'จองสินค้า' : 'ซื้อปกติ' ?>
-                                                            </span>
+                                                    <span
+                                                        class="badge rounded-pill <?= $order_type === 'reserve' ? 'bg-warning text-dark' : 'bg-success' ?> px-3 py-2 mb-2">
+                                                        <?= $order_type === 'reserve' ? 'จองสินค้า' : 'ซื้อปกติ' ?>
+                                                    </span>
 
-                                                            <h4 class="mb-1 fw-bold"><?= htmlspecialchars($p_name) ?></h4>
-                                                            <div class="text-muted small">
-                                                                ประเภท: <?= htmlspecialchars($type_name) ?>
-                                                            </div>
-                                                        </div>
-
-                                                        <a href="cart.php?remove=<?= urlencode($key) ?>"
-                                                            class="btn btn-outline-danger btn-remove-item"
-                                                            onclick="return confirm('ต้องการลบสินค้านี้ออกจากตะกร้าหรือไม่?')"
-                                                            title="ลบสินค้า">
-                                                            ×
-                                                        </a>
+                                                    <h4 class="mb-1 fw-bold"><?= htmlspecialchars($p_name) ?></h4>
+                                                    <div class="text-muted small">
+                                                        ประเภท: <?= htmlspecialchars($type_name) ?>
                                                     </div>
 
-                                                    <div class="row g-3 mt-1">
-                                                        <div class="col-md-4">
-                                                            <div class="info-box info-box-strong">
-                                                                <div class="text-muted small mb-1">ราคาต่อชิ้น</div>
-                                                                <div class="fw-bold text-dark">
-                                                                    <?= number_format($p_price, 2) ?> บาท
-                                                                </div>
-                                                            </div>
-                                                        </div>
-
-                                                        <div class="col-md-4">
-                                                            <div class="info-box info-box-strong">
-                                                                <div class="text-muted small mb-2">จำนวน</div>
-
-                                                                <form action="cart.php" method="post"
-                                                                    class="d-flex align-items-center gap-2">
-                                                                    <input type="hidden" name="update_qty" value="1">
-                                                                    <input type="hidden" name="key"
-                                                                        value="<?= htmlspecialchars($key) ?>">
-
-                                                                    <button type="button"
-                                                                        class="btn btn-outline-secondary btn-qty"
-                                                                        onclick="changeQty('<?= htmlspecialchars($key) ?>', -1)"
-                                                                        <?= $isOutOfStock ? 'disabled' : '' ?>>
-                                                                        -
-                                                                    </button>
-
-                                                                    <input type="number" name="qty"
-                                                                        id="qty<?= htmlspecialchars($key) ?>"
-                                                                        value="<?= $qty ?>" min="1"
-                                                                        <?= $isSaleItem ? 'max="' . $currentStock . '"' : '' ?>
-                                                                        class="form-control text-center qty-input"
-                                                                        onchange="this.form.submit()"
-                                                                        <?= $isOutOfStock ? 'disabled' : '' ?>>
-
-                                                                    <button type="button"
-                                                                        class="btn btn-outline-secondary btn-qty"
-                                                                        onclick="changeQty('<?= htmlspecialchars($key) ?>', 1)"
-                                                                        <?= ($isOutOfStock || ($isSaleItem && $qty >= $currentStock)) ? 'disabled' : '' ?>>
-                                                                        +
-                                                                    </button>
-                                                                </form>
-
-                                                                <?php if ($isSaleItem): ?>
-                                                                    <small class="text-muted d-block mt-2">
-                                                                        สต็อกคงเหลือ <?= number_format($currentStock) ?> ชิ้น
-                                                                    </small>
-
-                                                                    <?php if ($isOutOfStock): ?>
-                                                                        <small class="text-danger d-block mt-1">
-                                                                            สินค้าหมด ไม่สามารถสั่งซื้อได้
-                                                                        </small>
-                                                                    <?php elseif ($isOverStock): ?>
-                                                                        <small class="text-danger d-block mt-1">
-                                                                            จำนวนในตะกร้าเกินสต็อก กรุณาปรับเหลือไม่เกิน
-                                                                            <?= number_format($currentStock) ?> ชิ้น
-                                                                        </small>
-                                                                    <?php endif; ?>
-                                                                <?php endif; ?>
-                                                            </div>
-                                                        </div>
-
-                                                        <div class="col-md-4">
-                                                            <div class="info-box info-box-strong">
-                                                                <div class="text-muted small mb-1">รวมรายการ</div>
-                                                                <div class="fw-bold text-danger">
-                                                                    <?= number_format($sum, 2) ?> บาท
-                                                                </div>
-                                                            </div>
-                                                        </div>
+                                                    <?php if ($order_type === 'sale' && $discount > 0 && !empty($promo)): ?>
+                                                    <div class="mt-2">
+                                                        <span class="badge bg-danger rounded-pill px-3 py-2">
+                                                            โปรโมชั่น: <?= htmlspecialchars($promo['promo_name']) ?>
+                                                        </span>
                                                     </div>
-
-                                                    <?php if ($order_type === 'reserve'): ?>
-                                                        <div
-                                                            class="alert alert-warning rounded-4 small mt-3 mb-0 border-0 reserve-alert">
-                                                            ชำระมัดจำตอนนี้ <?= number_format($deposit, 2) ?> บาท
-                                                            และชำระส่วนที่เหลือวันรับสินค้า <?= number_format($remain, 2) ?> บาท
-                                                        </div>
                                                     <?php endif; ?>
                                                 </div>
+
+                                                <a href="cart.php?remove=<?= urlencode($key) ?>"
+                                                    class="btn btn-outline-danger btn-remove-item"
+                                                    onclick="return confirm('ต้องการลบสินค้านี้ออกจากตะกร้าหรือไม่?')"
+                                                    title="ลบสินค้า">
+                                                    ×
+                                                </a>
                                             </div>
+
+                                            <div class="row g-3 mt-1">
+                                                <div class="col-md-4">
+                                                    <div class="info-box info-box-strong">
+                                                        <div class="text-muted small mb-1">ราคาต่อชิ้น</div>
+                                                        <div class="fw-bold text-dark">
+                                                            <?= number_format($p_price, 2) ?> บาท
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                <div class="col-md-4">
+                                                    <div class="info-box info-box-strong">
+                                                        <div class="text-muted small mb-2">จำนวน</div>
+
+                                                        <form action="cart.php" method="post"
+                                                            class="d-flex align-items-center gap-2">
+                                                            <input type="hidden" name="update_qty" value="1">
+                                                            <input type="hidden" name="key"
+                                                                value="<?= htmlspecialchars($key) ?>">
+
+                                                            <button type="button"
+                                                                class="btn btn-outline-secondary btn-qty"
+                                                                onclick="changeQty('<?= htmlspecialchars($key) ?>', -1)"
+                                                                <?= $isOutOfStock ? 'disabled' : '' ?>>
+                                                                -
+                                                            </button>
+
+                                                            <input type="number" name="qty"
+                                                                id="qty<?= htmlspecialchars($key) ?>"
+                                                                value="<?= $qty ?>" min="1"
+                                                                <?= $isSaleItem ? 'max="' . $currentStock . '"' : '' ?>
+                                                                class="form-control text-center qty-input"
+                                                                onchange="this.form.submit()"
+                                                                <?= $isOutOfStock ? 'disabled' : '' ?>>
+
+                                                            <button type="button"
+                                                                class="btn btn-outline-secondary btn-qty"
+                                                                onclick="changeQty('<?= htmlspecialchars($key) ?>', 1)"
+                                                                <?= ($isOutOfStock || ($isSaleItem && $qty >= $currentStock)) ? 'disabled' : '' ?>>
+                                                                +
+                                                            </button>
+                                                        </form>
+
+                                                        <?php if ($isSaleItem): ?>
+                                                        <small class="text-muted d-block mt-2">
+                                                            สต็อกคงเหลือ <?= number_format($currentStock) ?> ชิ้น
+                                                        </small>
+
+                                                        <?php if ($isOutOfStock): ?>
+                                                        <small class="text-danger d-block mt-1">
+                                                            สินค้าหมด ไม่สามารถสั่งซื้อได้
+                                                        </small>
+                                                        <?php elseif ($isOverStock): ?>
+                                                        <small class="text-danger d-block mt-1">
+                                                            จำนวนในตะกร้าเกินสต็อก กรุณาปรับเหลือไม่เกิน
+                                                            <?= number_format($currentStock) ?> ชิ้น
+                                                        </small>
+                                                        <?php endif; ?>
+                                                        <?php endif; ?>
+                                                    </div>
+                                                </div>
+
+                                                <div class="col-md-4">
+                                                    <div class="info-box info-box-strong">
+                                                        <div class="text-muted small mb-1">รวมรายการ</div>
+
+                                                        <?php if ($order_type === 'sale' && $discount > 0): ?>
+                                                        <div class="text-muted text-decoration-line-through">
+                                                            <?= number_format($sum, 2) ?> บาท
+                                                        </div>
+                                                        <div class="text-success small">
+                                                            ลด <?= number_format($discount, 2) ?> บาท
+                                                        </div>
+                                                        <div class="fw-bold text-danger">
+                                                            <?= number_format($finalPrice, 2) ?> บาท
+                                                        </div>
+                                                        <?php else: ?>
+                                                        <div class="fw-bold text-danger">
+                                                            <?= number_format($sum, 2) ?> บาท
+                                                        </div>
+                                                        <?php endif; ?>
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            <?php if ($order_type === 'reserve'): ?>
+                                            <div
+                                                class="alert alert-warning rounded-4 small mt-3 mb-0 border-0 reserve-alert">
+                                                ชำระมัดจำตอนนี้ <?= number_format($deposit, 2) ?> บาท
+                                                และชำระส่วนที่เหลือวันรับสินค้า <?= number_format($remain, 2) ?> บาท
+                                            </div>
+                                            <?php endif; ?>
                                         </div>
                                     </div>
                                 </div>
                             </div>
-                        <?php endforeach; ?>
+                        </div>
                     </div>
+                    <?php endforeach; ?>
+                </div>
 
-                    <div class="col-lg-4">
-                        <div class="card border-0 shadow-sm rounded-4 sticky-lg-top cart-side-card" style="top: 100px;">
-                            <div class="card-body p-4">
-                                <div class="side-title-wrap mb-4">
-                                    <h4 class="fw-bold mb-1">สรุปรายการ</h4>
-                                    <p class="text-muted small mb-0">ตรวจสอบยอดก่อนดำเนินการชำระเงิน</p>
-                                </div>
+                <div class="col-lg-4">
+                    <div class="card border-0 shadow-sm rounded-4 sticky-lg-top cart-side-card" style="top: 100px;">
+                        <div class="card-body p-4">
+                            <div class="side-title-wrap mb-4">
+                                <h4 class="fw-bold mb-1">สรุปรายการ</h4>
+                                <p class="text-muted small mb-0">ตรวจสอบยอดก่อนดำเนินการชำระเงิน</p>
+                            </div>
 
-                                <div class="summary-row">
-                                    <span class="text-muted">จำนวนสินค้าทั้งหมด</span>
-                                    <strong><?= number_format($totalQty) ?> ชิ้น</strong>
-                                </div>
+                            <div class="cart-mini-items mb-3">
+                                <?php foreach ($cart as $mini): ?>
+                                <?php
+                                        $mi_p_id = (int)($mini['p_id'] ?? 0);
+                                        $mi_name = htmlspecialchars($mini['p_name'] ?? '-');
+                                        $mi_qty = (int)($mini['qty'] ?? 0);
+                                        $mi_price = (float)($mini['p_price'] ?? 0);
+                                        $mi_sum = $mi_price * $mi_qty;
+                                        $mi_order_type = $mini['order_type'] ?? 'sale';
 
-                                <div class="summary-row">
-                                    <span class="text-muted">ราคารวมทั้งหมด</span>
-                                    <strong><?= number_format($grandTotal, 2) ?> บาท</strong>
-                                </div>
+                                        $mi_discount = 0;
+                                        $mi_final = $mi_sum;
 
-                                <?php if ($grandDeposit > 0): ?>
-                                    <div class="summary-row">
-                                        <span class="text-muted">ยอดมัดจำรวม</span>
-                                        <strong class="text-warning"><?= number_format($grandDeposit, 2) ?> บาท</strong>
+                                        if ($mi_order_type === 'sale') {
+                                            $miPromoResult = getPromotion($conn, $mi_p_id, $mi_sum);
+                                            $mi_discount = (float)$miPromoResult['discount'];
+                                            $mi_final = (float)$miPromoResult['final_total'];
+                                        }
+                                        ?>
+                                <div class="mini-item d-flex justify-content-between align-items-center">
+                                    <div class="mini-item-left">
+                                        <div class="mini-item-name"><?= $mi_name ?></div>
+                                        <div class="mini-item-meta text-muted small">จำนวน <?= $mi_qty ?> ชิ้น</div>
+                                        <?php if ($mi_discount > 0): ?>
+                                        <div class="mini-item-meta text-success small">
+                                            ลด <?= number_format($mi_discount, 2) ?> บาท
+                                        </div>
+                                        <?php endif; ?>
                                     </div>
-
-                                    <div class="summary-row">
-                                        <span class="text-muted">ยอดคงเหลือวันรับสินค้า</span>
-                                        <strong><?= number_format($grandRemain, 2) ?> บาท</strong>
+                                    <div class="mini-item-right fw-bold text-danger">
+                                        <?= number_format($mi_final, 2) ?> บาท
                                     </div>
+                                </div>
+                                <?php endforeach; ?>
+                            </div>
+
+                            <div class="summary-row">
+                                <span class="text-muted">จำนวนสินค้าทั้งหมด</span>
+                                <strong><?= number_format($totalQty) ?> ชิ้น</strong>
+                            </div>
+
+                            <div class="summary-row">
+                                <span class="text-muted">ราคารวมก่อนหักส่วนลด</span>
+                                <strong><?= number_format($grandRawTotal, 2) ?> บาท</strong>
+                            </div>
+
+                            <div class="summary-row">
+                                <span class="text-muted">ส่วนลดโปรโมชั่น</span>
+                                <strong class="text-success">-<?= number_format($grandDiscount, 2) ?> บาท</strong>
+                            </div>
+
+                            <div class="summary-row">
+                                <span class="text-muted">ราคารวมสุทธิ</span>
+                                <strong><?= number_format($grandTotal, 2) ?> บาท</strong>
+                            </div>
+
+                            <?php if ($grandDeposit > 0): ?>
+                            <div class="summary-row">
+                                <span class="text-muted">ยอดมัดจำรวม</span>
+                                <strong class="text-warning"><?= number_format($grandDeposit, 2) ?> บาท</strong>
+                            </div>
+
+                            <div class="summary-row">
+                                <span class="text-muted">ยอดคงเหลือวันรับสินค้า</span>
+                                <strong><?= number_format($grandRemain, 2) ?> บาท</strong>
+                            </div>
+                            <?php endif; ?>
+
+                            <div class="pay-now-box text-center mt-4 mb-4">
+                                <?= number_format($payNow, 2) ?> บาท
+                                <div class="small fw-normal text-dark mt-2">
+                                    <?= $hasReserve ? 'ยอดที่ต้องชำระตอนนี้ (มัดจำ)' : 'ยอดที่ต้องชำระตอนนี้' ?>
+                                </div>
+                            </div>
+
+                            <div class="alert alert-info rounded-4 small mb-4 border-0 summary-note">
+                                <strong>หมายเหตุ:</strong>
+                                รายการที่เป็น “จองสินค้า” จะชำระเฉพาะมัดจำ 50% ก่อน
+                                และชำระส่วนที่เหลือเมื่อมารับสินค้าที่ร้าน
+                                <br>
+                                <strong>เวลารับสินค้า:</strong> กรุณามารับไม่เกิน <strong>17:30 น.</strong>
+                            </div>
+
+                            <div class="d-grid gap-2">
+                                <?php if ($canCheckout): ?>
+                                <button type="button" class="btn btn-success btn-lg rounded-pill checkout-btn"
+                                    onclick="openPaymentModal()">
+                                    ชำระเงินตอนนี้
+                                </button>
+                                <?php else: ?>
+                                <button type="button" class="btn btn-secondary btn-lg rounded-pill" disabled>
+                                    กรุณาตรวจสอบจำนวนสินค้าในตะกร้า
+                                </button>
                                 <?php endif; ?>
 
-                                <div class="pay-now-box text-center mt-4 mb-4">
-                                    <?= number_format($payNow, 2) ?> บาท
-                                    <div class="small fw-normal text-dark mt-2">
-                                        <?= $hasReserve ? 'ยอดที่ต้องชำระตอนนี้ (มัดจำ)' : 'ยอดที่ต้องชำระตอนนี้' ?>
-                                    </div>
-                                </div>
-
-                                <div class="pickup-card mb-4">
-                                    <h6 class="fw-bold mb-3">วันและเวลารับสินค้า</h6>
-
-                                    <div class="mb-3">
-                                        <label class="form-label">วันที่มารับสินค้า</label>
-                                        <input type="date" id="pickup_date" class="form-control" min="<?= $today ?>"
-                                            value="<?= $today ?>">
-                                    </div>
-
-                                    <div class="mb-2">
-                                        <label class="form-label">เวลามารับสินค้า</label>
-                                        <input type="time" id="pickup_time" class="form-control" min="00:00" max="17:30">
-                                    </div>
-
-                                    <small class="text-danger d-block">
-                                        * ลูกค้าต้องมารับสินค้าภายในวันที่สั่งสินค้าเท่านั้น
-                                    </small>
-                                    <small class="text-danger d-block mt-1">
-                                        * เวลารับสินค้าต้องไม่เกิน <strong>17:30 น.</strong>
-                                    </small>
-                                </div>
-
-                                <div class="alert alert-info rounded-4 small mb-4 border-0 summary-note">
-                                    <strong>หมายเหตุ:</strong>
-                                    รายการที่เป็น “จองสินค้า” จะชำระเฉพาะมัดจำ 50% ก่อน
-                                    และชำระส่วนที่เหลือเมื่อมารับสินค้าที่ร้าน
-                                    <br>
-                                    <strong>เวลารับสินค้า:</strong> กรุณามารับไม่เกิน <strong>17:30 น.</strong>
-                                </div>
-
-                                <div class="d-grid gap-2">
-                                    <?php if ($canCheckout): ?>
-                                        <button type="button" class="btn btn-success btn-lg rounded-pill checkout-btn"
-                                            onclick="openPaymentModal()">
-                                            ชำระเงินตอนนี้
-                                        </button>
-                                    <?php else: ?>
-                                        <button type="button" class="btn btn-secondary btn-lg rounded-pill" disabled>
-                                            กรุณาตรวจสอบจำนวนสินค้าในตะกร้า
-                                        </button>
-                                    <?php endif; ?>
-
-                                    <a href="index.php" class="btn btn-outline-secondary rounded-pill">
-                                        เลือกสินค้าเพิ่ม
-                                    </a>
-                                </div>
+                                <a href="index.php" class="btn btn-outline-secondary rounded-pill">
+                                    เลือกสินค้าเพิ่ม
+                                </a>
                             </div>
                         </div>
                     </div>
                 </div>
+            </div>
 
             <?php else: ?>
-                <div class="empty-cart-wrap">
-                    <div class="empty-cart-card">
-                        <div class="empty-cart-icon">🛒</div>
-                        <h3 class="fw-bold mb-2">ยังไม่มีสินค้าในตะกร้า</h3>
-                        <p class="text-muted mb-4">เริ่มเลือกสินค้าแล้วเพิ่มลงตะกร้าได้เลย</p>
-                        <div class="d-flex justify-content-center gap-2 flex-wrap">
-                            <a href="index.php" class="btn btn-danger rounded-pill px-4 py-2">
-                                ไปเลือกสินค้า
-                            </a>
-                        </div>
+            <div class="empty-cart-wrap">
+                <div class="empty-cart-card">
+                    <div class="empty-cart-icon">🛒</div>
+                    <h3 class="fw-bold mb-2">ยังไม่มีสินค้าในตะกร้า</h3>
+                    <p class="text-muted mb-4">เริ่มเลือกสินค้าแล้วเพิ่มลงตะกร้าได้เลย</p>
+                    <div class="d-flex justify-content-center gap-2 flex-wrap">
+                        <a href="index.php" class="btn btn-danger rounded-pill px-4 py-2">
+                            ไปเลือกสินค้า
+                        </a>
                     </div>
                 </div>
+            </div>
             <?php endif; ?>
         </div>
 
@@ -496,379 +616,350 @@ if (!empty($cart)) {
     </div>
 
     <?php if (!empty($cart)): ?>
-        <div class="modal fade" id="paymentModal" tabindex="-1" aria-labelledby="paymentModalLabel" aria-hidden="true">
-            <div class="modal-dialog modal-dialog-centered">
-                <div class="modal-content rounded-4 border-0 shadow">
-                    <div class="modal-header border-0 pb-0">
-                        <h5 class="modal-title fw-bold" id="paymentModalLabel">
-                            <?= $hasReserve ? 'ชำระมัดจำผ่าน QR พร้อมเพย์' : 'ชำระเงินผ่าน QR พร้อมเพย์' ?>
-                        </h5>
-                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                    </div>
+    <div class="modal fade" id="paymentModal" tabindex="-1" aria-labelledby="paymentModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content rounded-4 border-0 shadow">
+                <div class="modal-header border-0 pb-0">
+                    <h5 class="modal-title fw-bold" id="paymentModalLabel">
+                        <?= $hasReserve ? 'ชำระมัดจำผ่าน QR พร้อมเพย์' : 'ชำระเงินผ่าน QR พร้อมเพย์' ?>
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
 
-                    <div class="modal-body text-center px-4 pb-4">
-                        <p class="text-muted mb-2">
-                            <?= $hasReserve ? 'ยอดมัดจำที่ต้องชำระ' : 'ยอดที่ต้องชำระ' ?>
+                <div class="modal-body text-center px-4 pb-4">
+                    <p class="text-muted mb-2">
+                        <?= $hasReserve ? 'ยอดมัดจำที่ต้องชำระ' : 'ยอดที่ต้องชำระ' ?>
+                    </p>
+                    <h2 class="text-danger fw-bold mb-3"><?= number_format($payNow, 2) ?> บาท</h2>
+
+                    <div class="bg-light rounded-4 p-3 mb-3">
+                        <img src="https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=PromptPayDemo"
+                            class="img-fluid mb-2" alt="QR Payment">
+                        <p class="text-muted mb-0">
+                            <?= $hasReserve ? 'สแกน QR นี้เพื่อชำระมัดจำ' : 'สแกน QR นี้เพื่อชำระเงิน' ?>
                         </p>
-                        <h2 class="text-danger fw-bold mb-3"><?= number_format($payNow, 2) ?> บาท</h2>
-
-                        <div class="bg-light rounded-4 p-3 mb-3">
-                            <img src="https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=PromptPayDemo"
-                                class="img-fluid mb-2" alt="QR Payment">
-                            <p class="text-muted mb-0">
-                                <?= $hasReserve ? 'สแกน QR นี้เพื่อชำระมัดจำ' : 'สแกน QR นี้เพื่อชำระเงิน' ?>
-                            </p>
-                        </div>
-
-                        <form action="payment_form.php" method="get" id="paymentForm">
-                            <input type="hidden" name="pay_amount" value="<?= $payNow ?>">
-
-                            <?php if ($hasReserve && !empty($reserve_id)): ?>
-                                <input type="hidden" name="reserve_id" value="<?= htmlspecialchars($reserve_id) ?>">
-                            <?php endif; ?>
-
-                            <input type="hidden" name="pickup_date" id="hidden_pickup_date">
-                            <input type="hidden" name="pickup_time" id="hidden_pickup_time">
-
-                            <button type="submit" class="btn btn-success rounded-pill px-4">
-                                สแกนแล้ว → แนบสลิป
-                            </button>
-                        </form>
                     </div>
+
+                    <form action="payment_form.php" method="get" id="paymentForm">
+                        <input type="hidden" name="pay_amount" value="<?= $payNow ?>">
+
+                        <?php if ($hasReserve && !empty($reserve_id)): ?>
+                        <input type="hidden" name="reserve_id" value="<?= htmlspecialchars($reserve_id) ?>">
+                        <?php endif; ?>
+
+                        <input type="hidden" name="pickup_date" id="hidden_pickup_date">
+                        <input type="hidden" name="pickup_time" id="hidden_pickup_time">
+
+                        <button type="submit" class="btn btn-success rounded-pill px-4">
+                            สแกนแล้ว → แนบสลิป
+                        </button>
+                    </form>
                 </div>
             </div>
         </div>
+    </div>
     <?php endif; ?>
 
     <style>
-        body {
-            background: #f7f8fb;
-        }
+    body {
+        background: #f7f8fb;
+    }
 
+    .cart-hero {
+        background: linear-gradient(135deg, #ffffff 0%, #f5f7ff 100%);
+        border: 1px solid #e5eaf3;
+        border-radius: 28px;
+        padding: 22px 24px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 16px;
+        box-shadow: 0 12px 32px rgba(31, 41, 55, 0.06);
+    }
+
+    .cart-hero-left {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+    }
+
+    .hero-icon-box {
+        width: 68px;
+        height: 68px;
+        min-width: 68px;
+        border-radius: 20px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 34px;
+        background: linear-gradient(135deg, #eef2ff 0%, #ffeef1 100%);
+        border: 1px solid #e6e9f4;
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
+    }
+
+    .cart-title {
+        font-size: 2rem;
+        color: #0f2f57;
+    }
+
+    .cart-subtitle {
+        color: #6b7280;
+        font-size: 1rem;
+    }
+
+    .btn-soft {
+        background: #fff;
+        border-width: 1px;
+        box-shadow: 0 4px 14px rgba(15, 23, 42, 0.05);
+    }
+
+    .cart-card {
+        transition: 0.25s ease;
+    }
+
+    .cart-card:hover {
+        transform: translateY(-3px);
+    }
+
+    .cart-card-strong {
+        border: 1px solid #e8ecf3 !important;
+        box-shadow: 0 14px 28px rgba(15, 23, 42, 0.06) !important;
+        background: #fff;
+    }
+
+    .cart-image-wrap {
+        background: linear-gradient(180deg, #fafbff 0%, #f4f6fb 100%);
+        border-right: 1px solid #edf1f7;
+    }
+
+    .cart-product-image {
+        min-height: 240px;
+        object-fit: cover;
+    }
+
+    .info-box {
+        background: #f8f9fb;
+        border: 1px solid #eef0f4;
+        border-radius: 16px;
+        padding: 14px 16px;
+        height: 100%;
+    }
+
+    .info-box-strong {
+        background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+        border: 1px solid #e8edf5;
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+    }
+
+    .summary-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 12px 0;
+        border-bottom: 1px dashed #e5e7eb;
+        gap: 12px;
+    }
+
+    .summary-row:last-of-type {
+        border-bottom: none;
+    }
+
+    .pay-now-box {
+        background: linear-gradient(135deg, #fff1f2 0%, #fff7ed 100%);
+        color: #dc2626;
+        font-size: 30px;
+        font-weight: 700;
+        border-radius: 20px;
+        padding: 18px 20px;
+        border: 1px solid #ffe2e2;
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
+    }
+
+    .cart-side-card {
+        border: 1px solid #e8edf5 !important;
+        box-shadow: 0 14px 30px rgba(15, 23, 42, 0.06) !important;
+    }
+
+    .side-title-wrap {
+        padding-bottom: 12px;
+        border-bottom: 1px solid #edf1f7;
+    }
+
+    .summary-note {
+        background: linear-gradient(180deg, #eff6ff 0%, #f7fbff 100%);
+        border: 1px solid #d8e8ff !important;
+        color: #305c8a;
+    }
+
+    .cart-mini-items {
+        border: 1px solid #eef1f7;
+        background: #fff;
+        padding: 12px;
+        border-radius: 12px;
+        margin-bottom: 12px;
+    }
+
+    .mini-item {
+        padding: 8px 6px;
+        border-bottom: 1px dashed #f0f3f8;
+    }
+
+    .mini-item:last-child {
+        border-bottom: none;
+    }
+
+    .mini-item-name {
+        font-weight: 700;
+        color: #253045;
+    }
+
+    .mini-item-meta {
+        color: #8b95a7;
+    }
+
+    .reserve-alert {
+        background: linear-gradient(180deg, #fff8e7 0%, #fffdf7 100%);
+        border: 1px solid #ffe1a8 !important;
+        color: #8a5a14;
+    }
+
+    .checkout-btn {
+        box-shadow: 0 10px 20px rgba(34, 197, 94, 0.2);
+    }
+
+    .btn-remove-item {
+        width: 40px;
+        height: 40px;
+        min-width: 40px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 18px;
+        font-weight: bold;
+        padding: 0;
+        text-decoration: none;
+    }
+
+    .btn-qty {
+        width: 34px;
+        height: 34px;
+        min-width: 34px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 18px;
+        font-weight: bold;
+        padding: 0;
+    }
+
+    .qty-input {
+        width: 70px;
+        min-width: 70px;
+    }
+
+    .empty-cart-wrap {
+        background: linear-gradient(180deg, #ffffff 0%, #f9fbff 100%);
+        border: 1px solid #e7ecf3;
+        border-radius: 28px;
+        box-shadow: 0 14px 34px rgba(15, 23, 42, 0.05);
+        padding: 24px;
+    }
+
+    .empty-cart-card {
+        min-height: 420px;
+        border: 2px dashed #e2e8f0;
+        border-radius: 24px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-direction: column;
+        text-align: center;
+        padding: 36px 20px;
+        background:
+            radial-gradient(circle at top, rgba(99, 102, 241, 0.04), transparent 35%),
+            linear-gradient(180deg, #ffffff 0%, #fbfcff 100%);
+    }
+
+    .empty-cart-icon {
+        width: 110px;
+        height: 110px;
+        border-radius: 28px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 54px;
+        background: linear-gradient(135deg, #eef2ff 0%, #fff1f2 100%);
+        border: 1px solid #e6eaf5;
+        box-shadow: 0 12px 30px rgba(15, 23, 42, 0.05);
+        margin-bottom: 18px;
+    }
+
+    @media (max-width: 991.98px) {
         .cart-hero {
-            background: linear-gradient(135deg, #ffffff 0%, #f5f7ff 100%);
-            border: 1px solid #e5eaf3;
-            border-radius: 28px;
-            padding: 22px 24px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            flex-wrap: wrap;
-            gap: 16px;
-            box-shadow: 0 12px 32px rgba(31, 41, 55, 0.06);
+            padding: 18px;
         }
 
         .cart-hero-left {
-            display: flex;
-            align-items: center;
-            gap: 16px;
+            align-items: flex-start;
         }
+    }
 
-        .hero-icon-box {
-            width: 68px;
-            height: 68px;
-            min-width: 68px;
-            border-radius: 20px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 34px;
-            background: linear-gradient(135deg, #eef2ff 0%, #ffeef1 100%);
-            border: 1px solid #e6e9f4;
-            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
-        }
-
+    @media (max-width: 767.98px) {
         .cart-title {
-            font-size: 2rem;
-            color: #0f2f57;
+            font-size: 1.6rem;
         }
 
-        .cart-subtitle {
-            color: #6b7280;
-            font-size: 1rem;
-        }
-
-        .btn-soft {
-            background: #fff;
-            border-width: 1px;
-            box-shadow: 0 4px 14px rgba(15, 23, 42, 0.05);
-        }
-
-        .cart-summary-mini {
-            display: grid;
-            grid-template-columns: repeat(3, minmax(0, 1fr));
-            gap: 16px;
-        }
-
-        .mini-box {
-            background: #fff;
-            border: 1px solid #e9edf5;
-            border-radius: 20px;
-            padding: 18px 20px;
-            box-shadow: 0 10px 24px rgba(15, 23, 42, 0.04);
-        }
-
-        .mini-label {
-            color: #8b95a7;
-            font-size: 13px;
-            margin-bottom: 8px;
-        }
-
-        .mini-value {
-            font-size: 1.55rem;
-            font-weight: 800;
-            color: #253045;
-            line-height: 1.2;
-        }
-
-        .cart-card {
-            transition: 0.25s ease;
-        }
-
-        .cart-card:hover {
-            transform: translateY(-3px);
-        }
-
-        .cart-card-strong {
-            border: 1px solid #e8ecf3 !important;
-            box-shadow: 0 14px 28px rgba(15, 23, 42, 0.06) !important;
-            background: #fff;
-        }
-
-        .cart-image-wrap {
-            background: linear-gradient(180deg, #fafbff 0%, #f4f6fb 100%);
-            border-right: 1px solid #edf1f7;
-        }
-
-        .cart-product-image {
-            min-height: 240px;
-            object-fit: cover;
-        }
-
-        .info-box {
-            background: #f8f9fb;
-            border: 1px solid #eef0f4;
-            border-radius: 16px;
-            padding: 14px 16px;
-            height: 100%;
-        }
-
-        .info-box-strong {
-            background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
-            border: 1px solid #e8edf5;
-            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
-        }
-
-        .summary-row {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 12px 0;
-            border-bottom: 1px dashed #e5e7eb;
+        .cart-hero-left {
+            flex-direction: column;
             gap: 12px;
         }
 
-        .summary-row:last-of-type {
-            border-bottom: none;
-        }
-
-        .pay-now-box {
-            background: linear-gradient(135deg, #fff1f2 0%, #fff7ed 100%);
-            color: #dc2626;
-            font-size: 30px;
-            font-weight: 700;
-            border-radius: 20px;
-            padding: 18px 20px;
-            border: 1px solid #ffe2e2;
-            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
-        }
-
-        .pickup-card {
-            background: linear-gradient(180deg, #fffaf3 0%, #fffefb 100%);
-            border: 1px solid #f6d7b8;
-            border-radius: 20px;
-            padding: 16px;
-            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5);
-        }
-
-        .pickup-card .form-control {
-            border: 1px solid #ead8c9;
-            min-height: 46px;
-        }
-
-        .pickup-card .form-control:focus {
-            border-color: #f59e0b;
-            box-shadow: 0 0 0 .2rem rgba(245, 158, 11, 0.12);
-        }
-
-        .cart-side-card {
-            border: 1px solid #e8edf5 !important;
-            box-shadow: 0 14px 30px rgba(15, 23, 42, 0.06) !important;
-        }
-
-        .side-title-wrap {
-            padding-bottom: 12px;
-            border-bottom: 1px solid #edf1f7;
-        }
-
-        .summary-note {
-            background: linear-gradient(180deg, #eff6ff 0%, #f7fbff 100%);
-            border: 1px solid #d8e8ff !important;
-            color: #305c8a;
-        }
-
-        .reserve-alert {
-            background: linear-gradient(180deg, #fff8e7 0%, #fffdf7 100%);
-            border: 1px solid #ffe1a8 !important;
-            color: #8a5a14;
-        }
-
-        .checkout-btn {
-            box-shadow: 0 10px 20px rgba(34, 197, 94, 0.2);
-        }
-
-        .btn-remove-item {
-            width: 40px;
-            height: 40px;
-            min-width: 40px;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 18px;
-            font-weight: bold;
-            padding: 0;
-            text-decoration: none;
-        }
-
-        .btn-qty {
-            width: 34px;
-            height: 34px;
-            min-width: 34px;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 18px;
-            font-weight: bold;
-            padding: 0;
-        }
-
-        .qty-input {
-            width: 70px;
-            min-width: 70px;
-        }
-
-        .empty-cart-wrap {
-            background: linear-gradient(180deg, #ffffff 0%, #f9fbff 100%);
-            border: 1px solid #e7ecf3;
-            border-radius: 28px;
-            box-shadow: 0 14px 34px rgba(15, 23, 42, 0.05);
-            padding: 24px;
+        .hero-icon-box {
+            width: 56px;
+            height: 56px;
+            min-width: 56px;
+            font-size: 28px;
+            border-radius: 16px;
         }
 
         .empty-cart-card {
-            min-height: 420px;
-            border: 2px dashed #e2e8f0;
-            border-radius: 24px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            flex-direction: column;
-            text-align: center;
-            padding: 36px 20px;
-            background:
-                radial-gradient(circle at top, rgba(99, 102, 241, 0.04), transparent 35%),
-                linear-gradient(180deg, #ffffff 0%, #fbfcff 100%);
+            min-height: 340px;
         }
-
-        .empty-cart-icon {
-            width: 110px;
-            height: 110px;
-            border-radius: 28px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 54px;
-            background: linear-gradient(135deg, #eef2ff 0%, #fff1f2 100%);
-            border: 1px solid #e6eaf5;
-            box-shadow: 0 12px 30px rgba(15, 23, 42, 0.05);
-            margin-bottom: 18px;
-        }
-
-        @media (max-width: 991.98px) {
-            .cart-summary-mini {
-                grid-template-columns: 1fr;
-            }
-
-            .cart-hero {
-                padding: 18px;
-            }
-
-            .cart-hero-left {
-                align-items: flex-start;
-            }
-        }
-
-        @media (max-width: 767.98px) {
-            .cart-title {
-                font-size: 1.6rem;
-            }
-
-            .cart-hero-left {
-                flex-direction: column;
-                gap: 12px;
-            }
-
-            .hero-icon-box {
-                width: 56px;
-                height: 56px;
-                min-width: 56px;
-                font-size: 28px;
-                border-radius: 16px;
-            }
-
-            .empty-cart-card {
-                min-height: 340px;
-            }
-        }
+    }
     </style>
 
     <script>
-        function changeQty(id, amount) {
-            const input = document.getElementById('qty' + id);
-            if (!input) return;
+    function changeQty(id, amount) {
+        const input = document.getElementById('qty' + id);
+        if (!input) return;
 
-            let val = parseInt(input.value) || 1;
-            const max = parseInt(input.getAttribute('max')) || 999999;
+        let val = parseInt(input.value) || 1;
+        const max = parseInt(input.getAttribute('max')) || 999999;
 
-            val += amount;
+        val += amount;
 
-            if (val < 1) {
-                val = 1;
-            }
+        if (val < 1) val = 1;
+        if (val > max) val = max;
 
-            if (val > max) {
-                val = max;
-            }
+        input.value = val;
+        input.form.submit();
+    }
 
-            input.value = val;
-            input.form.submit();
-        }
+    function isValidPickupTime(timeValue) {
+        if (!timeValue) return false;
+        return timeValue <= '17:30';
+    }
 
-        function isValidPickupTime(timeValue) {
-            if (!timeValue) return false;
-            return timeValue <= '17:30';
-        }
+    function openPaymentModal() {
+        const pickupDate = document.getElementById('pickup_date');
+        const pickupTime = document.getElementById('pickup_time');
+        const hiddenPickupDate = document.getElementById('hidden_pickup_date');
+        const hiddenPickupTime = document.getElementById('hidden_pickup_time');
 
-        function openPaymentModal() {
-            const pickupDate = document.getElementById('pickup_date');
-            const pickupTime = document.getElementById('pickup_time');
-            const hiddenPickupDate = document.getElementById('hidden_pickup_date');
-            const hiddenPickupTime = document.getElementById('hidden_pickup_time');
-
-            if (!pickupDate || !pickupTime) return;
-
+        if (pickupDate && pickupTime) {
             if (pickupDate.value === '') {
                 alert('กรุณาเลือกวันที่มารับสินค้า');
                 pickupDate.focus();
@@ -889,45 +980,55 @@ if (!empty($cart)) {
 
             if (hiddenPickupDate) hiddenPickupDate.value = pickupDate.value;
             if (hiddenPickupTime) hiddenPickupTime.value = pickupTime.value;
-
-            const paymentModalEl = document.getElementById('paymentModal');
-            if (paymentModalEl) {
-                const paymentModal = new bootstrap.Modal(paymentModalEl);
-                paymentModal.show();
-            }
+        } else {
+            if (hiddenPickupDate) hiddenPickupDate.value = '';
+            if (hiddenPickupTime) hiddenPickupTime.value = '';
         }
 
-        document.addEventListener('DOMContentLoaded', function() {
-            const pickupTime = document.getElementById('pickup_time');
-            const paymentForm = document.getElementById('paymentForm');
+        const paymentModalEl = document.getElementById('paymentModal');
+        if (paymentModalEl) {
+            const paymentModal = new bootstrap.Modal(paymentModalEl);
+            paymentModal.show();
+        }
+    }
 
-            if (pickupTime) {
-                pickupTime.addEventListener('change', function() {
-                    if (this.value && !isValidPickupTime(this.value)) {
-                        alert('กรุณาเลือกเวลามารับสินค้าไม่เกิน 17:30 น.');
-                        this.value = '';
-                        this.focus();
-                    }
-                });
-            }
+    document.addEventListener('DOMContentLoaded', function() {
+        const pickupTime = document.getElementById('pickup_time');
+        const paymentForm = document.getElementById('paymentForm');
 
-            if (paymentForm) {
-                paymentForm.addEventListener('submit', function(e) {
-                    const pickupTimeValue = document.getElementById('pickup_time')?.value || '';
+        if (pickupTime) {
+            pickupTime.addEventListener('change', function() {
+                if (this.value && !isValidPickupTime(this.value)) {
+                    alert('กรุณาเลือกเวลามารับสินค้าไม่เกิน 17:30 น.');
+                    this.value = '';
+                    this.focus();
+                }
+            });
+        }
 
+        if (paymentForm) {
+            paymentForm.addEventListener('submit', function(e) {
+                const pickupTimeEl = document.getElementById('pickup_time');
+
+                if (pickupTimeEl) {
+                    const pickupTimeValue = pickupTimeEl.value || '';
                     if (!pickupTimeValue) {
                         e.preventDefault();
                         alert('กรุณาเลือกเวลามารับสินค้า');
+                        pickupTimeEl.focus();
                         return;
                     }
 
                     if (!isValidPickupTime(pickupTimeValue)) {
                         e.preventDefault();
                         alert('เวลามารับสินค้าต้องไม่เกิน 17:30 น.');
+                        pickupTimeEl.focus();
+                        return;
                     }
-                });
-            }
-        });
+                }
+            });
+        }
+    });
     </script>
     </body>
 

@@ -325,6 +325,12 @@ if (session_status() === PHP_SESSION_NONE) {
                     <span>สมาชิก</span>
                 </a>
             </li>
+            <li class="nav-item">
+                <a href="promotion.php" class="nav-link <?php if ($menu == 'promotion') echo 'active'; ?>">
+                    <i class="fas fa-tags"></i>
+                    <span>โปรโมชั่น</span>
+                </a>
+            </li>
 
             <li class="nav-item">
                 <a href="type.php" class="nav-link <?php if (($menu ?? '') == 'type') echo 'active'; ?>">
@@ -348,12 +354,7 @@ if (session_status() === PHP_SESSION_NONE) {
                 </a>
             </li>
 
-            <li class="nav-item">
-                <a href="contact_form.php" class="nav-link <?php if (($menu ?? '') == 'contact') echo 'active'; ?>">
-                    <i class="fas fa-address-book"></i>
-                    <span>ติดต่อเรา</span>
-                </a>
-            </li>
+
 
             <li class="nav-item">
                 <a href="orders.php" class="nav-link <?php if (($menu ?? '') == 'orders') echo 'active'; ?>">
@@ -366,6 +367,13 @@ if (session_status() === PHP_SESSION_NONE) {
                 <a href="report.php" class="nav-link <?php if (($menu ?? '') == 'report') echo 'active'; ?>">
                     <i class="fas fa-chart-bar"></i>
                     <span>รายงาน</span>
+                </a>
+            </li>
+
+            <li class="nav-item">
+                <a href="contact_form.php" class="nav-link <?php if (($menu ?? '') == 'contact') echo 'active'; ?>">
+                    <i class="fas fa-address-book"></i>
+                    <span>ติดต่อเรา</span>
                 </a>
             </li>
 

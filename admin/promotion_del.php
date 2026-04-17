@@ -1,21 +1,54 @@
-<?php 
-if(isset($_GET['pro_id'])){
-    include '../condb.php';
-//ประกาศตัวแปรรับค่าจาก param method get
-$pro_id = $_GET['pro_id'];
-$stmt = $conn->prepare('DELETE FROM tbl_promotion WHERE pro_id=:pro_id');
-$stmt->bindParam(':pro_id', $pro_id , PDO::PARAM_INT);
-$stmt->execute();
+<?php
+session_start();
+include_once '../condb.php';
 
-  if($stmt->rowCount() > 0){
-        echo '<script>       
-              window.location = "promotion.php"; //หน้าที่ต้องการให้กระโดดไป
-              </script>';
-    }else{
-       echo '<script>         
-              window.location = "promotion.php"; //หน้าที่ต้องการให้กระโดดไป
-             </script>';
+error_reporting(E_ALL);
+ini_set('display_errors', 1);
+
+$promo_id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
+
+if ($promo_id <= 0) {
+    echo "<script>alert('ไม่พบรหัสโปรโมชั่น'); window.location='promotion.php';</script>";
+    exit;
+}
+
+try {
+    $conn->beginTransaction();
+
+    $stmtCheck = $conn->prepare("
+        SELECT promo_id, promo_name
+        FROM tbl_promotion
+        WHERE promo_id = ?
+        LIMIT 1
+    ");
+    $stmtCheck->execute([$promo_id]);
+    $promo = $stmtCheck->fetch(PDO::FETCH_ASSOC);
+
+    if (!$promo) {
+        throw new Exception('ไม่พบข้อมูลโปรโมชั่น');
     }
-$conn = null;
-} //isset
-?>
+
+    $stmtDelLink = $conn->prepare("
+        DELETE FROM tbl_promotion_product
+        WHERE promo_id = ?
+    ");
+    $stmtDelLink->execute([$promo_id]);
+
+    $stmtDelPromo = $conn->prepare("
+        DELETE FROM tbl_promotion
+        WHERE promo_id = ?
+    ");
+    $stmtDelPromo->execute([$promo_id]);
+
+    $conn->commit();
+
+    echo "<script>alert('ลบโปรโมชั่นเรียบร้อยแล้ว'); window.location='promotion.php';</script>";
+    exit;
+} catch (Exception $e) {
+    if ($conn->inTransaction()) {
+        $conn->rollBack();
+    }
+
+    echo "<script>alert('เกิดข้อผิดพลาด: " . addslashes($e->getMessage()) . "'); window.location='promotion.php';</script>";
+    exit;
+}

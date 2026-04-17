@@ -16,6 +16,7 @@ $stmtReserve = $conn->prepare("
         total_amount,
         payment_status,
         reserve_status,
+        pickup_status,
         created_at
     FROM tbl_reservation
     ORDER BY reserve_id DESC
@@ -63,7 +64,8 @@ foreach ($reservations as $row) {
         'created_at' => $row['created_at'],
         'pay_datetime' => '',
         'slip_image' => '',
-        'slip_id' => 0
+        'slip_id' => 0,
+        'pickup_status' => $row['pickup_status'] ?? 'pending'
     ];
 }
 
@@ -78,7 +80,8 @@ foreach ($sales as $row) {
         'amount' => $row['pay_amount'],
         'created_at' => $row['created_at'],
         'pay_datetime' => $row['pay_datetime'],
-        'slip_image' => $row['slip_image']
+        'slip_image' => $row['slip_image'],
+        'pickup_status' => $row['status'] ?? 'pending'
     ];
 }
 
@@ -101,6 +104,22 @@ function badgeType($type)
 
     return '<span class="order-pill other"><i class="fas fa-circle"></i> ไม่ระบุ</span>';
 }
+
+/* =========================
+   badge สถานะรับสินค้า
+========================= */
+function badgePickupStatus($status)
+{
+    if ($status == 'received') {
+        return '<span class="status-pill received"><i class="fas fa-check-circle"></i> มารับแล้ว</span>';
+    }
+
+    if ($status == 'cancelled') {
+        return '<span class="status-pill cancelled"><i class="fas fa-times-circle"></i> ยกเลิก</span>';
+    }
+
+    return '<span class="status-pill pending"><i class="fas fa-clock"></i> ยังไม่มารับ</span>';
+}
 ?>
 <!DOCTYPE html>
 <html lang="th">
@@ -121,390 +140,484 @@ function badgeType($type)
     <script src="https://cdn.datatables.net/1.13.4/js/dataTables.bootstrap5.min.js"></script>
 
     <style>
-        body {
-            margin: 0;
-            font-family: 'Prompt', sans-serif;
-            background: #f3f5fb;
-            color: #2f3542;
-        }
+    body {
+        margin: 0;
+        font-family: 'Prompt', sans-serif;
+        background: #f3f5fb;
+        color: #2f3542;
+    }
 
+    .content-wrapper {
+        padding: 24px;
+        min-height: 100vh;
+        background: #f3f5fb;
+    }
+
+    .hero-card {
+        background: linear-gradient(135deg, #cfd7ff 0%, #dfe6ff 100%);
+        border-radius: 20px;
+        border: 1px solid #d9e1fb;
+        padding: 22px 24px;
+        margin-bottom: 18px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 18px;
+        flex-wrap: wrap;
+    }
+
+    .hero-title {
+        font-size: 30px;
+        font-weight: 800;
+        color: #253045;
+        margin: 0 0 6px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
+
+    .hero-subtitle {
+        margin: 0;
+        color: #58677d;
+        font-size: 14px;
+    }
+
+    .hero-icon {
+        width: 72px;
+        height: 72px;
+        border-radius: 20px;
+        background: rgba(255, 255, 255, 0.6);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 30px;
+        color: #5c6ad8;
+        box-shadow: 0 8px 20px rgba(99, 102, 241, 0.12);
+    }
+
+    .summary-grid {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 16px;
+        margin-bottom: 20px;
+    }
+
+    .summary-card {
+        background: #fff;
+        border: 1px solid #e9edf5;
+        border-radius: 18px;
+        padding: 18px 20px;
+        box-shadow: 0 10px 24px rgba(15, 23, 42, 0.04);
+    }
+
+    .summary-label {
+        color: #8b95a7;
+        font-size: 13px;
+        margin-bottom: 8px;
+    }
+
+    .summary-value {
+        font-size: 28px;
+        font-weight: 800;
+        color: #253045;
+        line-height: 1.1;
+    }
+
+    .filter-card,
+    .table-card {
+        background: #fff;
+        border: 1px solid #e9edf5;
+        border-radius: 20px;
+        box-shadow: 0 10px 24px rgba(15, 23, 42, 0.04);
+        overflow: hidden;
+    }
+
+    .filter-card {
+        margin-bottom: 18px;
+    }
+
+    .filter-card .card-body,
+    .table-card .card-body {
+        padding: 20px 22px;
+    }
+
+    .filter-btns {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+    }
+
+    .filter-btns .btn {
+        border-radius: 999px;
+        padding: 10px 18px;
+        font-weight: 700;
+        transition: all .2s ease;
+    }
+
+    .filter-btns .btn:hover {
+        transform: translateY(-1px);
+    }
+
+    .btn-filter-all {
+        background: linear-gradient(135deg, #6478ff, #5865f2);
+        color: #fff;
+        border: 1px solid #5865f2;
+    }
+
+    .btn-filter-all:hover {
+        color: #fff;
+        opacity: .95;
+    }
+
+    .btn-filter-outline {
+        background: #fff;
+        color: #5865f2;
+        border: 1px solid #dbe2ff;
+    }
+
+    .btn-filter-outline:hover {
+        background: #eef2ff;
+        color: #4654cf;
+    }
+
+    .btn-filter-reserve {
+        background: linear-gradient(135deg, #f4b267, #e59a44);
+        color: #fff;
+        border: 1px solid #e59a44;
+    }
+
+    .btn-filter-reserve:hover {
+        color: #fff;
+        opacity: .95;
+    }
+
+    .btn-filter-sale {
+        background: linear-gradient(135deg, #35c98f, #20b97a);
+        color: #fff;
+        border: 1px solid #20b97a;
+    }
+
+    .btn-filter-sale:hover {
+        color: #fff;
+        opacity: .95;
+    }
+
+    .table {
+        margin-bottom: 0;
+    }
+
+    .table thead th {
+        background: #f8faff;
+        color: #8d96a8;
+        font-weight: 700;
+        border-bottom: 1px solid #edf1f7;
+        padding: 14px 12px;
+        vertical-align: middle;
+        white-space: nowrap;
+    }
+
+    .table tbody td {
+        padding: 14px 12px;
+        vertical-align: middle;
+        border-color: #f0f3f8;
+    }
+
+    .table tbody tr:hover {
+        background: #fafcff;
+    }
+
+    .order-no {
+        font-weight: 800;
+        color: #253045;
+    }
+
+    .customer-name {
+        font-weight: 700;
+        color: #253045;
+    }
+
+    .customer-phone {
+        color: #8a94a6;
+    }
+
+    .amount-text {
+        font-weight: 800;
+        color: #253045;
+        white-space: nowrap;
+    }
+
+    .date-text {
+        color: #8d96a8;
+        font-size: 14px;
+        white-space: nowrap;
+    }
+
+    .order-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        padding: 8px 14px;
+        border-radius: 999px;
+        font-size: 12px;
+        font-weight: 700;
+        line-height: 1;
+        white-space: nowrap;
+        border: 1px solid transparent;
+    }
+
+    .order-pill.reserve {
+        background: #fff3e6;
+        color: #c17632;
+        border-color: #efd0af;
+    }
+
+    .order-pill.sale {
+        background: #e8f8ee;
+        color: #1f8b4d;
+        border-color: #cdeedb;
+    }
+
+    .order-pill.other {
+        background: #f3f4f6;
+        color: #6b7280;
+        border-color: #d8dde3;
+    }
+
+    .status-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        padding: 8px 14px;
+        border-radius: 999px;
+        font-size: 12px;
+        font-weight: 700;
+        line-height: 1;
+        white-space: nowrap;
+        border: 1px solid transparent;
+    }
+
+    .status-pill.pending {
+        background: #ffc107;
+        color: #1f2937;
+        border-color: #e0a800;
+    }
+
+    .status-pill.received {
+        background: #28a745;
+        color: #ffffff;
+        border-color: #28a745;
+        box-shadow: 0 6px 18px rgba(40, 167, 69, 0.12);
+    }
+
+    .status-pill.cancelled {
+        background: #dc3545;
+        color: #ffffff;
+        border-color: #dc3545;
+        box-shadow: 0 6px 18px rgba(220, 53, 69, 0.08);
+    }
+
+    .btn-detail {
+        border: none;
+        border-radius: 12px;
+        background: linear-gradient(135deg, #6478ff, #5865f2);
+        color: #fff;
+        font-weight: 700;
+        padding: 8px 14px;
+        font-size: 13px;
+        box-shadow: 0 10px 18px rgba(88, 101, 242, 0.18);
+    }
+
+    .btn-detail:hover {
+        background: linear-gradient(135deg, #5865f2, #4d59dc);
+        color: #fff;
+        transform: translateY(-1px);
+    }
+
+    .btn-status {
+        border: none;
+        border-radius: 10px;
+        padding: 7px 12px;
+        font-size: 12px;
+        font-weight: 700;
+        margin-top: 8px;
+        margin-right: 10px;
+        display: inline-block;
+    }
+
+    .btn-status-success {
+        background: #28a745;
+        color: #fff;
+    }
+
+    .btn-status-warning {
+        background: #f0ad4e;
+        color: #fff;
+    }
+
+    .btn-status-danger {
+        background: #dc3545;
+        color: #fff;
+        border: 1px solid rgba(0, 0, 0, 0.06);
+    }
+
+    .btn-status:hover {
+        opacity: 0.92;
+        color: #fff;
+    }
+
+    div.dataTables_wrapper div.dataTables_filter input,
+    div.dataTables_wrapper div.dataTables_length select {
+        border-radius: 12px;
+        border: 1px solid #dbe3ef;
+        background: #fff;
+        padding: 6px 10px;
+        color: #5f4431;
+    }
+
+    div.dataTables_wrapper div.dataTables_info,
+    div.dataTables_wrapper div.dataTables_length,
+    div.dataTables_wrapper div.dataTables_filter {
+        color: #7f6857;
+    }
+
+    .page-item.active .page-link {
+        background: #5865f2;
+        border-color: #5865f2;
+    }
+
+    .page-link {
+        color: #5865f2;
+    }
+
+    .reserve-items-title {
+        font-size: 15px;
+        font-weight: 800;
+        color: #5865f2;
+        margin: 16px 0 10px;
+    }
+
+    .reserve-items-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 14px;
+        overflow: hidden;
+        border-radius: 12px;
+    }
+
+    .reserve-items-table th {
+        background: #f8faff;
+        color: #58677d;
+        padding: 10px 8px;
+        border: 1px solid #e7ecf4;
+        text-align: left;
+    }
+
+    .reserve-items-table td {
+        padding: 10px 8px;
+        border: 1px solid #e7ecf4;
+        color: #364152;
+    }
+
+    .reserve-items-table td.text-center,
+    .reserve-items-table th.text-center {
+        text-align: center;
+    }
+
+    .reserve-items-table td.text-end,
+    .reserve-items-table th.text-end {
+        text-align: right;
+    }
+
+    .order-detail-popup {
+        text-align: left;
+        color: #364152;
+    }
+
+    .order-detail-info {
+        line-height: 2;
+        font-size: 15px;
+    }
+
+    .slip-preview-card {
+        margin-top: 18px;
+        padding: 14px;
+        background: #f8faff;
+        border: 1px solid #e7ecf4;
+        border-radius: 16px;
+    }
+
+    .slip-preview-title {
+        font-size: 14px;
+        font-weight: 800;
+        color: #5865f2;
+        margin-bottom: 10px;
+    }
+
+    .slip-preview-img {
+        width: 100%;
+        max-height: 420px;
+        object-fit: contain;
+        border-radius: 14px;
+        border: 1px solid #dfe6f1;
+        background: #fff;
+        box-shadow: 0 8px 20px rgba(15, 23, 42, 0.06);
+    }
+
+    .slip-preview-fallback {
+        padding: 30px;
+        text-align: center;
+        color: #8a94a6;
+        background: #fff;
+        border: 1px dashed #d6deea;
+        border-radius: 14px;
+    }
+
+    .swal2-popup .swal2-html-container {
+        overflow: visible !important;
+    }
+
+    /* Custom SweetAlert styles */
+    .swal-custom-popup {
+        border-radius: 12px !important;
+        padding: 28px !important;
+        box-shadow: 0 18px 50px rgba(15, 23, 42, 0.12) !important;
+        font-family: 'Prompt', sans-serif;
+    }
+
+    .swal-custom-title {
+        font-size: 22px !important;
+        font-weight: 800 !important;
+        color: #253045 !important;
+        margin: 0 0 8px !important;
+    }
+
+    .swal-custom-content {
+        color: #58677d !important;
+        font-size: 15px !important;
+        margin-bottom: 12px !important;
+    }
+
+    .swal2-confirm.btn,
+    .swal2-cancel.btn {
+        min-width: 140px;
+        padding: 10px 16px;
+        border-radius: 8px;
+        font-weight: 700;
+    }
+
+    @media (max-width: 991px) {
         .content-wrapper {
-            padding: 24px;
-            min-height: 100vh;
-            background: #f3f5fb;
-        }
-
-        .hero-card {
-            background: linear-gradient(135deg, #cfd7ff 0%, #dfe6ff 100%);
-            border-radius: 20px;
-            border: 1px solid #d9e1fb;
-            padding: 22px 24px;
-            margin-bottom: 18px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            gap: 18px;
-            flex-wrap: wrap;
-        }
-
-        .hero-title {
-            font-size: 30px;
-            font-weight: 800;
-            color: #253045;
-            margin: 0 0 6px;
-            display: flex;
-            align-items: center;
-            gap: 12px;
-        }
-
-        .hero-subtitle {
-            margin: 0;
-            color: #58677d;
-            font-size: 14px;
-        }
-
-        .hero-icon {
-            width: 72px;
-            height: 72px;
-            border-radius: 20px;
-            background: rgba(255, 255, 255, 0.6);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 30px;
-            color: #5c6ad8;
-            box-shadow: 0 8px 20px rgba(99, 102, 241, 0.12);
+            padding: 16px;
         }
 
         .summary-grid {
-            display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 16px;
-            margin-bottom: 20px;
+            grid-template-columns: 1fr;
         }
 
-        .summary-card {
-            background: #fff;
-            border: 1px solid #e9edf5;
-            border-radius: 18px;
-            padding: 18px 20px;
-            box-shadow: 0 10px 24px rgba(15, 23, 42, 0.04);
+        .hero-title {
+            font-size: 24px;
         }
-
-        .summary-label {
-            color: #8b95a7;
-            font-size: 13px;
-            margin-bottom: 8px;
-        }
-
-        .summary-value {
-            font-size: 28px;
-            font-weight: 800;
-            color: #253045;
-            line-height: 1.1;
-        }
-
-        .filter-card,
-        .table-card {
-            background: #fff;
-            border: 1px solid #e9edf5;
-            border-radius: 20px;
-            box-shadow: 0 10px 24px rgba(15, 23, 42, 0.04);
-            overflow: hidden;
-        }
-
-        .filter-card {
-            margin-bottom: 18px;
-        }
-
-        .filter-card .card-body,
-        .table-card .card-body {
-            padding: 20px 22px;
-        }
-
-        .filter-btns {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 12px;
-        }
-
-        .filter-btns .btn {
-            border-radius: 999px;
-            padding: 10px 18px;
-            font-weight: 700;
-            transition: all .2s ease;
-        }
-
-        .filter-btns .btn:hover {
-            transform: translateY(-1px);
-        }
-
-        .btn-filter-all {
-            background: linear-gradient(135deg, #6478ff, #5865f2);
-            color: #fff;
-            border: 1px solid #5865f2;
-        }
-
-        .btn-filter-all:hover {
-            color: #fff;
-            opacity: .95;
-        }
-
-        .btn-filter-outline {
-            background: #fff;
-            color: #5865f2;
-            border: 1px solid #dbe2ff;
-        }
-
-        .btn-filter-outline:hover {
-            background: #eef2ff;
-            color: #4654cf;
-        }
-
-        .btn-filter-reserve {
-            background: linear-gradient(135deg, #f4b267, #e59a44);
-            color: #fff;
-            border: 1px solid #e59a44;
-        }
-
-        .btn-filter-reserve:hover {
-            color: #fff;
-            opacity: .95;
-        }
-
-        .btn-filter-sale {
-            background: linear-gradient(135deg, #35c98f, #20b97a);
-            color: #fff;
-            border: 1px solid #20b97a;
-        }
-
-        .btn-filter-sale:hover {
-            color: #fff;
-            opacity: .95;
-        }
-
-        .table {
-            margin-bottom: 0;
-        }
-
-        .table thead th {
-            background: #f8faff;
-            color: #8d96a8;
-            font-weight: 700;
-            border-bottom: 1px solid #edf1f7;
-            padding: 14px 12px;
-            vertical-align: middle;
-            white-space: nowrap;
-        }
-
-        .table tbody td {
-            padding: 14px 12px;
-            vertical-align: middle;
-            border-color: #f0f3f8;
-        }
-
-        .table tbody tr:hover {
-            background: #fafcff;
-        }
-
-        .order-no {
-            font-weight: 800;
-            color: #253045;
-        }
-
-        .customer-name {
-            font-weight: 700;
-            color: #253045;
-        }
-
-        .customer-phone {
-            color: #8a94a6;
-        }
-
-        .amount-text {
-            font-weight: 800;
-            color: #253045;
-            white-space: nowrap;
-        }
-
-        .date-text {
-            color: #8d96a8;
-            font-size: 14px;
-            white-space: nowrap;
-        }
-
-        .order-pill {
-            display: inline-flex;
-            align-items: center;
-            gap: 7px;
-            padding: 8px 14px;
-            border-radius: 999px;
-            font-size: 12px;
-            font-weight: 700;
-            line-height: 1;
-            white-space: nowrap;
-            border: 1px solid transparent;
-        }
-
-        .order-pill.reserve {
-            background: #fff3e6;
-            color: #c17632;
-            border-color: #efd0af;
-        }
-
-        .order-pill.sale {
-            background: #e8f8ee;
-            color: #1f8b4d;
-            border-color: #cdeedb;
-        }
-
-        .order-pill.other {
-            background: #f3f4f6;
-            color: #6b7280;
-            border-color: #d8dde3;
-        }
-
-        .btn-detail {
-            border: none;
-            border-radius: 12px;
-            background: linear-gradient(135deg, #6478ff, #5865f2);
-            color: #fff;
-            font-weight: 700;
-            padding: 8px 14px;
-            font-size: 13px;
-            box-shadow: 0 10px 18px rgba(88, 101, 242, 0.18);
-        }
-
-        .btn-detail:hover {
-            background: linear-gradient(135deg, #5865f2, #4d59dc);
-            color: #fff;
-            transform: translateY(-1px);
-        }
-
-        div.dataTables_wrapper div.dataTables_filter input,
-        div.dataTables_wrapper div.dataTables_length select {
-            border-radius: 12px;
-            border: 1px solid #dbe3ef;
-            background: #fff;
-            padding: 6px 10px;
-            color: #5f4431;
-        }
-
-        div.dataTables_wrapper div.dataTables_info,
-        div.dataTables_wrapper div.dataTables_length,
-        div.dataTables_wrapper div.dataTables_filter {
-            color: #7f6857;
-        }
-
-        .page-item.active .page-link {
-            background: #5865f2;
-            border-color: #5865f2;
-        }
-
-        .page-link {
-            color: #5865f2;
-        }
-
-        .reserve-items-title {
-            font-size: 15px;
-            font-weight: 800;
-            color: #5865f2;
-            margin: 16px 0 10px;
-        }
-
-        .reserve-items-table {
-            width: 100%;
-            border-collapse: collapse;
-            font-size: 14px;
-            overflow: hidden;
-            border-radius: 12px;
-        }
-
-        .reserve-items-table th {
-            background: #f8faff;
-            color: #58677d;
-            padding: 10px 8px;
-            border: 1px solid #e7ecf4;
-            text-align: left;
-        }
-
-        .reserve-items-table td {
-            padding: 10px 8px;
-            border: 1px solid #e7ecf4;
-            color: #364152;
-        }
-
-        .reserve-items-table td.text-center,
-        .reserve-items-table th.text-center {
-            text-align: center;
-        }
-
-        .reserve-items-table td.text-end,
-        .reserve-items-table th.text-end {
-            text-align: right;
-        }
-
-        .order-detail-popup {
-            text-align: left;
-            color: #364152;
-        }
-
-        .order-detail-info {
-            line-height: 2;
-            font-size: 15px;
-        }
-
-        .slip-preview-card {
-            margin-top: 18px;
-            padding: 14px;
-            background: #f8faff;
-            border: 1px solid #e7ecf4;
-            border-radius: 16px;
-        }
-
-        .slip-preview-title {
-            font-size: 14px;
-            font-weight: 800;
-            color: #5865f2;
-            margin-bottom: 10px;
-        }
-
-        .slip-preview-img {
-            width: 100%;
-            max-height: 420px;
-            object-fit: contain;
-            border-radius: 14px;
-            border: 1px solid #dfe6f1;
-            background: #fff;
-            box-shadow: 0 8px 20px rgba(15, 23, 42, 0.06);
-        }
-
-        .slip-preview-fallback {
-            padding: 30px;
-            text-align: center;
-            color: #8a94a6;
-            background: #fff;
-            border: 1px dashed #d6deea;
-            border-radius: 14px;
-        }
-
-        .swal2-popup .swal2-html-container {
-            overflow: visible !important;
-        }
-
-        @media (max-width: 991px) {
-            .content-wrapper {
-                padding: 16px;
-            }
-
-            .summary-grid {
-                grid-template-columns: 1fr;
-            }
-
-            .hero-title {
-                font-size: 24px;
-            }
-        }
+    }
     </style>
 </head>
 
@@ -542,6 +655,25 @@ function badgeType($type)
                     <div class="summary-label">รายการขาย</div>
                     <div class="summary-value"><?php echo count($sales); ?></div>
                 </div>
+                <div class="summary-card">
+                    <div class="summary-label">รอรับสินค้า</div>
+                    <div class="summary-value">
+                        <?php
+                        $pendingCount = 0;
+                        foreach ($reservations as $r) {
+                            if (($r['pickup_status'] ?? 'pending') === 'pending') {
+                                $pendingCount++;
+                            }
+                        }
+                        foreach ($sales as $s) {
+                            if (($s['status'] ?? 'pending') === 'pending') {
+                                $pendingCount++;
+                            }
+                        }
+                        echo $pendingCount;
+                        ?>
+                    </div>
+                </div>
             </div>
 
             <div class="card filter-card">
@@ -575,6 +707,7 @@ function badgeType($type)
                                 <th>ลูกค้า</th>
                                 <th>เบอร์โทร</th>
                                 <th>ยอดรวม</th>
+                                <th>สถานะรับสินค้า</th>
                                 <th>วันที่ทำรายการ</th>
                                 <th>รายละเอียด</th>
                             </tr>
@@ -582,16 +715,51 @@ function badgeType($type)
                         <tbody>
 
                             <?php if ($tab == 'all'): ?>
-                                <?php foreach ($allOrders as $row): ?>
-                                    <tr>
-                                        <td class="order-no"><?php echo htmlspecialchars($row['order_no']); ?></td>
-                                        <td><?php echo badgeType($row['type']); ?></td>
-                                        <td class="customer-name"><?php echo htmlspecialchars($row['customer_name']); ?></td>
-                                        <td class="customer-phone"><?php echo htmlspecialchars($row['customer_phone']); ?></td>
-                                        <td class="amount-text"><?php echo number_format($row['amount'], 2); ?> บาท</td>
-                                        <td class="date-text"><?php echo htmlspecialchars($row['created_at']); ?></td>
-                                        <td>
-                                            <button type="button" class="btn btn-detail" onclick="viewOrderDetail(
+                            <?php foreach ($allOrders as $row): ?>
+                            <tr>
+                                <td class="order-no"><?php echo htmlspecialchars($row['order_no']); ?></td>
+                                <td><?php echo badgeType($row['type']); ?></td>
+                                <td class="customer-name"><?php echo htmlspecialchars($row['customer_name']); ?></td>
+                                <td class="customer-phone"><?php echo htmlspecialchars($row['customer_phone']); ?></td>
+                                <td class="amount-text"><?php echo number_format($row['amount'], 2); ?> บาท</td>
+                                <td>
+                                    <?php if ($row['type'] === 'reservation'): ?>
+                                    <?php echo badgePickupStatus($row['pickup_status'] ?? 'pending'); ?>
+                                    <div>
+                                        <?php if (($row['pickup_status'] ?? 'pending') !== 'received'): ?>
+                                        <button type="button" class="btn-status btn-status-success"
+                                            onclick="confirmReceive(<?php echo (int)$row['reserve_id']; ?>)">
+                                            ยืนยันว่ามารับแล้ว
+                                        </button>
+                                        <?php else: ?>
+                                        <button type="button" class="btn-status btn-status-warning"
+                                            onclick="changeToPending(<?php echo (int)$row['reserve_id']; ?>)">
+                                            เปลี่ยนเป็นยังไม่มารับ
+                                        </button>
+                                        <?php endif; ?>
+                                    </div>
+                                    <?php elseif ($row['type'] === 'sale'): ?>
+                                    <?php echo badgePickupStatus($row['pickup_status'] ?? 'pending'); ?>
+                                    <div>
+                                        <?php if (($row['pickup_status'] ?? 'pending') !== 'received'): ?>
+                                        <button type="button" class="btn-status btn-status-success"
+                                            onclick="confirmReceiveSale(<?php echo (int)$row['slip_id']; ?>)">
+                                            ยืนยันว่ามารับแล้ว
+                                        </button>
+                                        <?php else: ?>
+                                        <button type="button" class="btn-status btn-status-warning"
+                                            onclick="changeToPendingSale(<?php echo (int)$row['slip_id']; ?>)">
+                                            เปลี่ยนเป็นยังไม่มารับ
+                                        </button>
+                                        <?php endif; ?>
+                                    </div>
+                                    <?php else: ?>
+                                    <span class="text-muted">-</span>
+                                    <?php endif; ?>
+                                </td>
+                                <td class="date-text"><?php echo htmlspecialchars($row['created_at']); ?></td>
+                                <td>
+                                    <button type="button" class="btn btn-detail" onclick="viewOrderDetail(
                                                 '<?php echo htmlspecialchars($row['order_no'], ENT_QUOTES); ?>',
                                                 '<?php echo htmlspecialchars($row['type'], ENT_QUOTES); ?>',
                                                 '<?php echo htmlspecialchars($row['customer_name'], ENT_QUOTES); ?>',
@@ -603,24 +771,47 @@ function badgeType($type)
                                                 '<?php echo htmlspecialchars($row['pay_datetime'] ?? '', ENT_QUOTES); ?>',
                                                 '<?php echo ($row['type'] === 'sale') ? (int)$row['slip_id'] : 0; ?>'
                                             )">
-                                                <i class="fas fa-eye me-1"></i> ดูรายละเอียด
-                                            </button>
-                                        </td>
-                                    </tr>
-                                <?php endforeach; ?>
+                                        <i class="fas fa-eye me-1"></i> ดูรายละเอียด
+                                    </button>
+                                </td>
+                            </tr>
+                            <?php endforeach; ?>
                             <?php endif; ?>
 
                             <?php if ($tab == 'reservation'): ?>
-                                <?php foreach ($reservations as $row): ?>
-                                    <tr>
-                                        <td class="order-no">RSV-<?php echo $row['reserve_id']; ?></td>
-                                        <td><?php echo badgeType('reservation'); ?></td>
-                                        <td class="customer-name"><?php echo htmlspecialchars($row['reserve_name']); ?></td>
-                                        <td class="customer-phone"><?php echo htmlspecialchars($row['reserve_phone']); ?></td>
-                                        <td class="amount-text"><?php echo number_format($row['total_amount'], 2); ?> บาท</td>
-                                        <td class="date-text"><?php echo htmlspecialchars($row['created_at']); ?></td>
-                                        <td>
-                                            <button type="button" class="btn btn-detail" onclick="viewOrderDetail(
+                            <?php foreach ($reservations as $row): ?>
+                            <tr>
+                                <td class="order-no">RSV-<?php echo $row['reserve_id']; ?></td>
+                                <td><?php echo badgeType('reservation'); ?></td>
+                                <td class="customer-name"><?php echo htmlspecialchars($row['reserve_name']); ?></td>
+                                <td class="customer-phone"><?php echo htmlspecialchars($row['reserve_phone']); ?></td>
+                                <td class="amount-text"><?php echo number_format($row['total_amount'], 2); ?> บาท</td>
+                                <td>
+                                    <?php echo badgePickupStatus($row['pickup_status'] ?? 'pending'); ?>
+                                    <div>
+                                        <?php if (($row['pickup_status'] ?? 'pending') !== 'received'): ?>
+                                        <button type="button" class="btn-status btn-status-success"
+                                            onclick="confirmReceive(<?php echo (int)$row['reserve_id']; ?>)">
+                                            ยืนยันว่ามารับแล้ว
+                                        </button>
+                                        <?php else: ?>
+                                        <button type="button" class="btn-status btn-status-warning"
+                                            onclick="changeToPending(<?php echo (int)$row['reserve_id']; ?>)">
+                                            เปลี่ยนเป็นยังไม่มารับ
+                                        </button>
+                                        <?php endif; ?>
+
+                                        <?php if (($row['pickup_status'] ?? 'pending') !== 'cancelled'): ?>
+                                        <button type="button" class="btn-status btn-status-danger"
+                                            onclick="cancelPickup(<?php echo (int)$row['reserve_id']; ?>)">
+                                            ยกเลิกจอง
+                                        </button>
+                                        <?php endif; ?>
+                                    </div>
+                                </td>
+                                <td class="date-text"><?php echo htmlspecialchars($row['created_at']); ?></td>
+                                <td>
+                                    <button type="button" class="btn btn-detail" onclick="viewOrderDetail(
                                                 'RSV-<?php echo htmlspecialchars($row['reserve_id'], ENT_QUOTES); ?>',
                                                 'reservation',
                                                 '<?php echo htmlspecialchars($row['reserve_name'], ENT_QUOTES); ?>',
@@ -632,24 +823,40 @@ function badgeType($type)
                                                 '',
                                                 0
                                             )">
-                                                <i class="fas fa-eye me-1"></i> ดูรายละเอียด
-                                            </button>
-                                        </td>
-                                    </tr>
-                                <?php endforeach; ?>
+                                        <i class="fas fa-eye me-1"></i> ดูรายละเอียด
+                                    </button>
+                                </td>
+                            </tr>
+                            <?php endforeach; ?>
                             <?php endif; ?>
 
                             <?php if ($tab == 'sale'): ?>
-                                <?php foreach ($sales as $row): ?>
-                                    <tr>
-                                        <td class="order-no">SALE-<?php echo $row['slip_id']; ?></td>
-                                        <td><?php echo badgeType('sale'); ?></td>
-                                        <td class="customer-name"><?php echo htmlspecialchars($row['payer_name']); ?></td>
-                                        <td class="customer-phone"><?php echo htmlspecialchars($row['payer_phone']); ?></td>
-                                        <td class="amount-text"><?php echo number_format($row['pay_amount'], 2); ?> บาท</td>
-                                        <td class="date-text"><?php echo htmlspecialchars($row['created_at']); ?></td>
-                                        <td>
-                                            <button type="button" class="btn btn-detail" onclick="viewOrderDetail(
+                            <?php foreach ($sales as $row): ?>
+                            <tr>
+                                <td class="order-no">SALE-<?php echo $row['slip_id']; ?></td>
+                                <td><?php echo badgeType('sale'); ?></td>
+                                <td class="customer-name"><?php echo htmlspecialchars($row['payer_name']); ?></td>
+                                <td class="customer-phone"><?php echo htmlspecialchars($row['payer_phone']); ?></td>
+                                <td class="amount-text"><?php echo number_format($row['pay_amount'], 2); ?> บาท</td>
+                                <td>
+                                    <?php echo badgePickupStatus($row['status'] ?? 'pending'); ?>
+                                    <div>
+                                        <?php if (($row['status'] ?? 'pending') !== 'received'): ?>
+                                        <button type="button" class="btn-status btn-status-success"
+                                            onclick="confirmReceiveSale(<?php echo (int)$row['slip_id']; ?>)">
+                                            ยืนยันว่ามารับแล้ว
+                                        </button>
+                                        <?php else: ?>
+                                        <button type="button" class="btn-status btn-status-warning"
+                                            onclick="changeToPendingSale(<?php echo (int)$row['slip_id']; ?>)">
+                                            เปลี่ยนเป็นยังไม่มารับ
+                                        </button>
+                                        <?php endif; ?>
+                                    </div>
+                                </td>
+                                <td class="date-text"><?php echo htmlspecialchars($row['created_at']); ?></td>
+                                <td>
+                                    <button type="button" class="btn btn-detail" onclick="viewOrderDetail(
                                                 'SALE-<?php echo htmlspecialchars($row['slip_id'], ENT_QUOTES); ?>',
                                                 'sale',
                                                 '<?php echo htmlspecialchars($row['payer_name'], ENT_QUOTES); ?>',
@@ -661,11 +868,11 @@ function badgeType($type)
                                                 '<?php echo htmlspecialchars($row['pay_datetime'] ?? '', ENT_QUOTES); ?>',
                                                 '<?php echo (int)$row['slip_id']; ?>'
                                             )">
-                                                <i class="fas fa-eye me-1"></i> ดูรายละเอียด
-                                            </button>
-                                        </td>
-                                    </tr>
-                                <?php endforeach; ?>
+                                        <i class="fas fa-eye me-1"></i> ดูรายละเอียด
+                                    </button>
+                                </td>
+                            </tr>
+                            <?php endforeach; ?>
                             <?php endif; ?>
 
                         </tbody>
@@ -677,34 +884,150 @@ function badgeType($type)
     </div>
 
     <script>
-        function viewOrderDetail(orderNo, type, customerName, customerPhone, amount, createdAt, reserveId = 0, slipImage =
-            '', payDatetime = '', slipId = 0) {
-            let typeText = '-';
-
-            if (type === 'reservation') {
-                typeText = 'การจอง';
-            } else if (type === 'sale') {
-                typeText = 'การขาย';
+    function confirmReceive(reserveId) {
+        Swal.fire({
+            title: 'ยืนยันการรับสินค้า?',
+            text: 'เมื่อลูกค้ามารับสินค้าแล้ว ให้กดยืนยัน',
+            icon: 'question',
+            showCancelButton: true,
+            confirmButtonText: 'ใช่, มารับแล้ว',
+            cancelButtonText: 'ยกเลิก',
+            buttonsStyling: false,
+            customClass: {
+                popup: 'swal-custom-popup',
+                title: 'swal-custom-title',
+                htmlContainer: 'swal-custom-content',
+                confirmButton: 'btn btn-success',
+                cancelButton: 'btn btn-secondary'
             }
+        }).then((result) => {
+            if (result.isConfirmed) {
+                window.location.href = 'update_pickup_status.php?reserve_id=' + reserveId + '&status=received';
+            }
+        });
+    }
 
-            if (type === 'reservation' && reserveId > 0) {
-                $.ajax({
-                    url: 'get_reservation_detail.php',
-                    type: 'GET',
-                    data: {
-                        reserve_id: reserveId
-                    },
-                    dataType: 'json',
-                    success: function(response) {
-                        let itemsHtml = '<div class="text-muted mt-3">ไม่มีรายการสินค้า</div>';
-                        let reserveInfoHtml = `
+    function changeToPending(reserveId) {
+        Swal.fire({
+            title: 'เปลี่ยนสถานะกลับ?',
+            text: 'ต้องการเปลี่ยนกลับเป็นยังไม่มารับใช่หรือไม่',
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonText: 'ใช่',
+            cancelButtonText: 'ยกเลิก',
+            buttonsStyling: false,
+            customClass: {
+                popup: 'swal-custom-popup',
+                title: 'swal-custom-title',
+                htmlContainer: 'swal-custom-content',
+                confirmButton: 'btn btn-warning',
+                cancelButton: 'btn btn-secondary'
+            }
+        }).then((result) => {
+            if (result.isConfirmed) {
+                window.location.href = 'update_pickup_status.php?reserve_id=' + reserveId + '&status=pending';
+            }
+        });
+    }
+
+    function cancelPickup(reserveId) {
+        Swal.fire({
+            title: 'ยืนยันการยกเลิก?',
+            text: 'ต้องการเปลี่ยนสถานะเป็นยกเลิกจองใช่หรือไม่',
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonText: 'ใช่, ยกเลิกจอง',
+            cancelButtonText: 'ปิด',
+            buttonsStyling: false,
+            customClass: {
+                popup: 'swal-custom-popup',
+                title: 'swal-custom-title',
+                htmlContainer: 'swal-custom-content',
+                confirmButton: 'btn btn-danger',
+                cancelButton: 'btn btn-secondary'
+            }
+        }).then((result) => {
+            if (result.isConfirmed) {
+                window.location.href = 'update_pickup_status.php?reserve_id=' + reserveId + '&status=cancelled';
+            }
+        });
+    }
+
+    function confirmReceiveSale(slipId) {
+        Swal.fire({
+            title: 'ยืนยันการรับสินค้า (การขาย)?',
+            text: 'เมื่อลูกค้ามารับสินค้าแล้ว ให้กดยืนยัน',
+            icon: 'question',
+            showCancelButton: true,
+            confirmButtonText: 'ใช่, มารับแล้ว',
+            cancelButtonText: 'ยกเลิก',
+            buttonsStyling: false,
+            customClass: {
+                popup: 'swal-custom-popup',
+                title: 'swal-custom-title',
+                htmlContainer: 'swal-custom-content',
+                confirmButton: 'btn btn-success',
+                cancelButton: 'btn btn-secondary'
+            }
+        }).then((result) => {
+            if (result.isConfirmed) {
+                window.location.href = 'update_pickup_status.php?slip_id=' + slipId + '&status=received';
+            }
+        });
+    }
+
+    function changeToPendingSale(slipId) {
+        Swal.fire({
+            title: 'เปลี่ยนสถานะกลับ (การขาย)?',
+            text: 'ต้องการเปลี่ยนกลับเป็นยังไม่มารับใช่หรือไม่',
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonText: 'ใช่',
+            cancelButtonText: 'ยกเลิก',
+            buttonsStyling: false,
+            customClass: {
+                popup: 'swal-custom-popup',
+                title: 'swal-custom-title',
+                htmlContainer: 'swal-custom-content',
+                confirmButton: 'btn btn-warning',
+                cancelButton: 'btn btn-secondary'
+            }
+        }).then((result) => {
+            if (result.isConfirmed) {
+                window.location.href = 'update_pickup_status.php?slip_id=' + slipId + '&status=pending';
+            }
+        });
+    }
+
+    function viewOrderDetail(orderNo, type, customerName, customerPhone, amount, createdAt, reserveId = 0, slipImage =
+        '',
+        payDatetime = '', slipId = 0) {
+        let typeText = '-';
+
+        if (type === 'reservation') {
+            typeText = 'การจอง';
+        } else if (type === 'sale') {
+            typeText = 'การขาย';
+        }
+
+        if (type === 'reservation' && reserveId > 0) {
+            $.ajax({
+                url: 'get_reservation_detail.php',
+                type: 'GET',
+                data: {
+                    reserve_id: reserveId
+                },
+                dataType: 'json',
+                success: function(response) {
+                    let itemsHtml = '<div class="text-muted mt-3">ไม่มีรายการสินค้า</div>';
+                    let reserveInfoHtml = `
                             <div><strong>ยอดรวม:</strong> ${amount} บาท</div>
                             <div><strong>วันที่ทำรายการ:</strong> ${createdAt}</div>
                         `;
-                        let slipHtml = '';
+                    let slipHtml = '';
 
-                        if (response.status && response.reserve) {
-                            reserveInfoHtml = `
+                    if (response.status && response.reserve) {
+                        reserveInfoHtml = `
                                 <div><strong>ยอดรวม:</strong> ${Number(response.reserve.total_amount).toLocaleString(undefined, {minimumFractionDigits: 2})} บาท</div>
                                 <div><strong>มัดจำที่จ่ายแล้ว:</strong> ${Number(response.reserve.deposit_amount).toLocaleString(undefined, {minimumFractionDigits: 2})} บาท</div>
                                 <div><strong>ยอดคงเหลือชำระที่ร้าน:</strong> ${Number(response.reserve.remaining_amount).toLocaleString(undefined, {minimumFractionDigits: 2})} บาท</div>
@@ -714,10 +1037,10 @@ function badgeType($type)
                                 <div><strong>เวลามารับ:</strong> ${response.reserve.pickup_time ?? '-'}</div>
                                 <div><strong>วันที่ทำรายการ:</strong> ${response.reserve.created_at ?? createdAt}</div>
                             `;
-                        }
+                    }
 
-                        if (response.status && response.items.length > 0) {
-                            itemsHtml = `
+                    if (response.status && response.items.length > 0) {
+                        itemsHtml = `
                                 <div class="reserve-items-title">📦 สินค้าที่สั่งจอง</div>
                                 <table class="reserve-items-table">
                                     <thead>
@@ -731,8 +1054,8 @@ function badgeType($type)
                                     <tbody>
                             `;
 
-                            response.items.forEach(function(item) {
-                                itemsHtml += `
+                        response.items.forEach(function(item) {
+                            itemsHtml += `
                                     <tr>
                                         <td>${item.p_name ?? '-'}</td>
                                         <td class="text-center">${item.qty}</td>
@@ -740,18 +1063,18 @@ function badgeType($type)
                                         <td class="text-end">${Number(item.subtotal).toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
                                     </tr>
                                 `;
-                            });
+                        });
 
-                            itemsHtml += `
+                        itemsHtml += `
                                     </tbody>
                                 </table>
                             `;
-                        }
+                    }
 
-                        if (response.status && response.slip && response.slip.slip_image) {
-                            const slipPath = '../uploads/slips/' + response.slip.slip_image;
+                    if (response.status && response.slip && response.slip.slip_image) {
+                        const slipPath = '../uploads/slips/' + response.slip.slip_image;
 
-                            slipHtml = `
+                        slipHtml = `
                                 <div class="slip-preview-card mt-3">
                                     <div class="slip-preview-title">สลิปมัดจำ / สลิปการจอง</div>
                                     <div class="order-detail-info mb-2">
@@ -769,15 +1092,21 @@ function badgeType($type)
                                     </a>
                                 </div>
                             `;
-                        }
+                    }
 
-                        Swal.fire({
-                            title: 'รายละเอียดออเดอร์',
-                            width: 900,
-                            confirmButtonText: 'ปิด',
-                            confirmButtonColor: '#5865f2',
-                            background: '#ffffff',
-                            html: `
+                    Swal.fire({
+                        title: 'รายละเอียดออเดอร์',
+                        width: 900,
+                        confirmButtonText: 'ปิด',
+                        buttonsStyling: false,
+                        customClass: {
+                            popup: 'swal-custom-popup',
+                            title: 'swal-custom-title',
+                            htmlContainer: 'swal-custom-content',
+                            confirmButton: 'btn btn-primary'
+                        },
+                        background: '#ffffff',
+                        html: `
                                 <div class="order-detail-popup">
                                     <div class="order-detail-info">
                                         <div><strong>เลขที่รายการ:</strong> ${orderNo}</div>
@@ -790,32 +1119,38 @@ function badgeType($type)
                                     ${slipHtml}
                                 </div>
                             `
-                        });
-                    },
-                    error: function() {
-                        Swal.fire({
-                            icon: 'error',
-                            title: 'เกิดข้อผิดพลาด',
-                            text: 'ไม่สามารถดึงรายละเอียดการจองได้',
-                            confirmButtonColor: '#5865f2',
-                            background: '#ffffff'
-                        });
-                    }
-                });
-            } else if (type === 'sale' && slipId > 0) {
-                $.ajax({
-                    url: 'get_sale_detail.php',
-                    type: 'GET',
-                    data: {
-                        slip_id: slipId
-                    },
-                    dataType: 'json',
-                    success: function(response) {
-                        let itemsHtml = '<div class="text-muted mt-3">ไม่มีรายการสินค้า</div>';
-                        let slipHtml = '';
+                    });
+                },
+                error: function() {
+                    Swal.fire({
+                        icon: 'error',
+                        title: 'เกิดข้อผิดพลาด',
+                        text: 'ไม่สามารถดึงรายละเอียดการจองได้',
+                        buttonsStyling: false,
+                        customClass: {
+                            popup: 'swal-custom-popup',
+                            title: 'swal-custom-title',
+                            htmlContainer: 'swal-custom-content',
+                            confirmButton: 'btn btn-primary'
+                        },
+                        background: '#ffffff'
+                    });
+                }
+            });
+        } else if (type === 'sale' && slipId > 0) {
+            $.ajax({
+                url: 'get_sale_detail.php',
+                type: 'GET',
+                data: {
+                    slip_id: slipId
+                },
+                dataType: 'json',
+                success: function(response) {
+                    let itemsHtml = '<div class="text-muted mt-3">ไม่มีรายการสินค้า</div>';
+                    let slipHtml = '';
 
-                        if (response.status && response.items.length > 0) {
-                            itemsHtml = `
+                    if (response.status && response.items.length > 0) {
+                        itemsHtml = `
                                 <div class="reserve-items-title">🛒 สินค้าที่ลูกค้าสั่งซื้อ</div>
                                 <table class="reserve-items-table">
                                     <thead>
@@ -829,8 +1164,8 @@ function badgeType($type)
                                     <tbody>
                             `;
 
-                            response.items.forEach(function(item) {
-                                itemsHtml += `
+                        response.items.forEach(function(item) {
+                            itemsHtml += `
                                     <tr>
                                         <td>${item.p_name ?? '-'}</td>
                                         <td class="text-center">${item.qty}</td>
@@ -838,18 +1173,18 @@ function badgeType($type)
                                         <td class="text-end">${Number(item.subtotal).toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
                                     </tr>
                                 `;
-                            });
+                        });
 
-                            itemsHtml += `
+                        itemsHtml += `
                                     </tbody>
                                 </table>
                             `;
-                        }
+                    }
 
-                        if (response.status && response.sale && response.sale.slip_image) {
-                            const slipPath = '../uploads/slips/' + response.sale.slip_image;
+                    if (response.status && response.sale && response.sale.slip_image) {
+                        const slipPath = '../uploads/slips/' + response.sale.slip_image;
 
-                            slipHtml = `
+                        slipHtml = `
                                 <div class="slip-preview-card mt-3">
                                     <div class="slip-preview-title">สลิปการโอนเงิน</div>
                                     <a href="${slipPath}" target="_blank" style="text-decoration:none;">
@@ -861,15 +1196,21 @@ function badgeType($type)
                                     </a>
                                 </div>
                             `;
-                        }
+                    }
 
-                        Swal.fire({
-                            title: 'รายละเอียดออเดอร์',
-                            width: 900,
-                            confirmButtonText: 'ปิด',
-                            confirmButtonColor: '#5865f2',
-                            background: '#ffffff',
-                            html: `
+                    Swal.fire({
+                        title: 'รายละเอียดออเดอร์',
+                        width: 900,
+                        confirmButtonText: 'ปิด',
+                        buttonsStyling: false,
+                        customClass: {
+                            popup: 'swal-custom-popup',
+                            title: 'swal-custom-title',
+                            htmlContainer: 'swal-custom-content',
+                            confirmButton: 'btn btn-primary'
+                        },
+                        background: '#ffffff',
+                        html: `
                                 <div class="order-detail-popup">
                                     <div class="order-detail-info">
                                         <div><strong>เลขที่รายการ:</strong> ${orderNo}</div>
@@ -884,48 +1225,60 @@ function badgeType($type)
                                     ${slipHtml}
                                 </div>
                             `
-                        });
-                    },
-                    error: function() {
-                        Swal.fire({
-                            icon: 'error',
-                            title: 'เกิดข้อผิดพลาด',
-                            text: 'ไม่สามารถดึงรายละเอียดการขายได้',
-                            confirmButtonColor: '#5865f2',
-                            background: '#ffffff'
-                        });
-                    }
-                });
-            } else {
-                Swal.fire({
-                    icon: 'warning',
-                    title: 'ไม่พบข้อมูล',
-                    text: 'ไม่พบรายละเอียดของรายการนี้',
-                    confirmButtonColor: '#5865f2',
-                    background: '#ffffff'
-                });
-            }
-        }
-
-        $(document).ready(function() {
-            $('#orderTable').DataTable({
-                pageLength: 10,
-                order: [
-                    [5, 'desc']
-                ],
-                language: {
-                    search: "ค้นหา:",
-                    lengthMenu: "แสดง _MENU_ รายการ",
-                    info: "แสดง _START_ ถึง _END_ จาก _TOTAL_ รายการ",
-                    infoEmpty: "ไม่มีข้อมูล",
-                    zeroRecords: "ไม่พบข้อมูลที่ค้นหา",
-                    paginate: {
-                        previous: "ก่อนหน้า",
-                        next: "ถัดไป"
-                    }
+                    });
+                },
+                error: function() {
+                    Swal.fire({
+                        icon: 'error',
+                        title: 'เกิดข้อผิดพลาด',
+                        text: 'ไม่สามารถดึงรายละเอียดการขายได้',
+                        buttonsStyling: false,
+                        customClass: {
+                            popup: 'swal-custom-popup',
+                            title: 'swal-custom-title',
+                            htmlContainer: 'swal-custom-content',
+                            confirmButton: 'btn btn-primary'
+                        },
+                        background: '#ffffff'
+                    });
                 }
             });
+        } else {
+            Swal.fire({
+                icon: 'warning',
+                title: 'ไม่พบข้อมูล',
+                text: 'ไม่พบรายละเอียดของรายการนี้',
+                buttonsStyling: false,
+                customClass: {
+                    popup: 'swal-custom-popup',
+                    title: 'swal-custom-title',
+                    htmlContainer: 'swal-custom-content',
+                    confirmButton: 'btn btn-primary'
+                },
+                background: '#ffffff'
+            });
+        }
+    }
+
+    $(document).ready(function() {
+        $('#orderTable').DataTable({
+            pageLength: 10,
+            order: [
+                [6, 'desc']
+            ],
+            language: {
+                search: "ค้นหา:",
+                lengthMenu: "แสดง _MENU_ รายการ",
+                info: "แสดง _START_ ถึง _END_ จาก _TOTAL_ รายการ",
+                infoEmpty: "ไม่มีข้อมูล",
+                zeroRecords: "ไม่พบข้อมูลที่ค้นหา",
+                paginate: {
+                    previous: "ก่อนหน้า",
+                    next: "ถัดไป"
+                }
+            }
         });
+    });
     </script>
 
 </body>

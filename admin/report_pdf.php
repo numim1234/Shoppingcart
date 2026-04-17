@@ -50,45 +50,45 @@ $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
     <meta charset="UTF-8">
     <title>รายงานการจองสินค้า</title>
     <style>
-        body {
-            font-family: DejaVu Sans, sans-serif;
-            font-size: 14px;
-        }
+    body {
+        font-family: DejaVu Sans, sans-serif;
+        font-size: 14px;
+    }
 
-        h2 {
-            text-align: center;
-            margin-bottom: 10px;
-        }
+    h2 {
+        text-align: center;
+        margin-bottom: 10px;
+    }
 
-        .date-range {
-            text-align: center;
-            margin-bottom: 20px;
-        }
+    .date-range {
+        text-align: center;
+        margin-bottom: 20px;
+    }
 
-        table {
-            width: 100%;
-            border-collapse: collapse;
-        }
+    table {
+        width: 100%;
+        border-collapse: collapse;
+    }
 
-        table,
-        th,
-        td {
-            border: 1px solid #333;
-        }
+    table,
+    th,
+    td {
+        border: 1px solid #333;
+    }
 
-        th,
-        td {
-            padding: 8px;
-            text-align: center;
-        }
+    th,
+    td {
+        padding: 8px;
+        text-align: center;
+    }
 
-        th {
-            background: #eee;
-        }
+    th {
+        background: #eee;
+    }
 
-        .text-right {
-            text-align: right;
-        }
+    .text-right {
+        text-align: right;
+    }
     </style>
 </head>
 
@@ -98,12 +98,12 @@ $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
     <div class="date-range">
         <?php if (!empty($date_start) || !empty($date_end)) { ?>
-            ช่วงวันที่:
-            <?= !empty($date_start) ? date('d/m/Y', strtotime($date_start)) : '-' ?>
-            ถึง
-            <?= !empty($date_end) ? date('d/m/Y', strtotime($date_end)) : '-' ?>
+        ช่วงวันที่:
+        <?= !empty($date_start) ? date('d/m/Y', strtotime($date_start)) : '-' ?>
+        ถึง
+        <?= !empty($date_end) ? date('d/m/Y', strtotime($date_end)) : '-' ?>
         <?php } else { ?>
-            ข้อมูลทั้งหมด
+        ข้อมูลทั้งหมด
         <?php } ?>
     </div>
 
@@ -123,24 +123,24 @@ $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
         </thead>
         <tbody>
             <?php if (!empty($rows)) { ?>
-                <?php $i = 1; ?>
-                <?php foreach ($rows as $row) { ?>
-                    <tr>
-                        <td><?= $i++ ?></td>
-                        <td><?= $row['reserve_id'] ?></td>
-                        <td><?= htmlspecialchars($row['reserve_name']) ?></td>
-                        <td><?= htmlspecialchars($row['reserve_phone']) ?></td>
-                        <td><?= date('d/m/Y', strtotime($row['pickup_date'])) ?></td>
-                        <td><?= date('H:i', strtotime($row['pickup_time'])) ?> น.</td>
-                        <td class="text-right"><?= number_format($row['total_amount'], 2) ?></td>
-                        <td class="text-right"><?= number_format($row['deposit_amount'], 2) ?></td>
-                        <td class="text-right"><?= number_format($row['remain_amount'], 2) ?></td>
-                    </tr>
-                <?php } ?>
+            <?php $i = 1; ?>
+            <?php foreach ($rows as $row) { ?>
+            <tr>
+                <td><?= $i++ ?></td>
+                <td><?= $row['reserve_id'] ?></td>
+                <td><?= htmlspecialchars($row['reserve_name']) ?></td>
+                <td><?= htmlspecialchars($row['reserve_phone']) ?></td>
+                <td><?= date('d/m/Y', strtotime($row['pickup_date'])) ?></td>
+                <td><?= date('H:i', strtotime($row['pickup_time'])) ?> น.</td>
+                <td class="text-right"><?= number_format($row['total_amount'], 2) ?></td>
+                <td class="text-right"><?= number_format($row['deposit_amount'], 2) ?></td>
+                <td class="text-right"><?= number_format($row['remain_amount'], 2) ?></td>
+            </tr>
+            <?php } ?>
             <?php } else { ?>
-                <tr>
-                    <td colspan="9">ไม่พบข้อมูล</td>
-                </tr>
+            <tr>
+                <td colspan="9">ไม่พบข้อมูล</td>
+            </tr>
             <?php } ?>
         </tbody>
     </table>

@@ -7,7 +7,12 @@ if (!isset($_SESSION['success'])) {
 }
 
 $msg = $_SESSION['success'];
+$last_slip_id = $_SESSION['last_slip_id'] ?? null;
 unset($_SESSION['success']);
+// keep last_slip_id for one display then clear
+if (isset($_SESSION['last_slip_id'])) {
+    unset($_SESSION['last_slip_id']);
+}
 ?>
 
 <!DOCTYPE html>
@@ -146,6 +151,9 @@ unset($_SESSION['success']);
                 <a href="cart.php" class="btn btn-outline-secondary btn-soft">
                     ดูตะกร้า
                 </a>
+                <?php if (!empty($last_slip_id)): ?>
+                    <a href="/slip_pdf.php?slip_id=<?= (int)$last_slip_id ?>" class="btn btn-outline-primary btn-soft" target="_blank" rel="noopener" download>ดาวน์โหลดสลิป (PDF)</a>
+                <?php endif; ?>
             </div>
 
         </div>
